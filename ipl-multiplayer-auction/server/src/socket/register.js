@@ -6,6 +6,42 @@ export function registerSockets(io, pool) {
     const r = await pool.query('SELECT * FROM auction_rooms WHERE code=$1', [String(code || '').toUpperCase()]);
     return r.rows[0] || null;
   };
+  // Create one randomized, server-owned order per room. Sets are shuffled first,
+  // then players inside each set; the saved ID list is reused after reconnects.
+  const shuffle = items => {
+    const a = [...items];
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  };
+  const ensureAuctionOrder = async (room, state) => {
+    if (Array.isArray(state.auctionPlayerOrder) && state.auctionPlayerOrder.length) return state;
+    const result = await pool.query(`SELECT id, source_data FROM players ORDER BY id`);
+    const bySet = new Map();
+    for (const row of result.rows) {
+      const setKey = String(row.source_data?.set_number ?? row.source_data?.setNumber ?? 'Unassigned');
+      if (!bySet.has(setKey)) bySet.set(setKey, []);
+      bySet.get(setKey).push(Number(row.id));
+    }
+    const randomizedSetKeys = shuffle([...bySet.keys()]);
+    state.auctionSetOrder = randomizedSetKeys;
+    state.auctionPlayerOrder = randomizedSetKeys.flatMap(key => shuffle(bySet.get(key)));
+    state.completedPlayerIds = Array.isArray(state.completedPlayerIds) ? state.completedPlayerIds : [];
+    await pool.query('UPDATE auction_rooms SET state=$2::jsonb WHERE id=$1', [room.id, JSON.stringify(state)]);
+    return state;
+  };
+  const selectNextFromSavedOrder = async (state) => {
+    const completed = new Set((state.completedPlayerIds || []).map(Number));
+    const currentId = Number(state.currentPlayerId || 0);
+    if (currentId && ['sold', 'unsold'].includes(state.status)) completed.add(currentId);
+    state.completedPlayerIds = [...completed];
+    const nextId = (state.auctionPlayerOrder || []).map(Number).find(id => !completed.has(id));
+    if (!nextId) return null;
+    const player = await pool.query('SELECT id,name,role,nationality,batting_style,bowling_style,photo_url,base_price_paise,source_data FROM players WHERE id=$1', [nextId]);
+    return player.rows[0] || null;
+  };
   io.on('connection', socket => {
     socket.on('room:join-live', async ({ code, participantId } = {}, ack = () => {}) => {
       try {
@@ -17,6 +53,9 @@ export function registerSockets(io, pool) {
         socket.join(room.code);
         await pool.query('UPDATE room_participants SET connected=true WHERE room_id=$1 AND participant_id=$2',[room.id,participantId]);
         socket.to(room.code).emit('presence:changed', { participantId, connected:true });
+        const peers = [...(io.sockets.adapter.rooms.get(room.code) || [])].filter(id=>id!==socket.id).map(id=>({socketId:id}));
+        socket.emit('voice:peers', peers);
+        socket.to(room.code).emit('voice:peer-joined',{socketId:socket.id,participantId});
         ack({ ok:true, room: { code:room.code, state:room.state, config:room.config, status:room.status } });
       } catch { ack({ ok:false, error:'join_failed' }); }
     });
@@ -71,6 +110,12 @@ export function registerSockets(io, pool) {
       } catch { ack({ok:false,error:'chat_send_failed'}); }
     });
 
+    socket.on('voice:join', () => {
+      if (!socket.data.roomCode) return;
+      const peers = [...(io.sockets.adapter.rooms.get(socket.data.roomCode) || [])].filter(id=>id!==socket.id).map(id=>({socketId:id}));
+      socket.emit('voice:peers', peers);
+      socket.to(socket.data.roomCode).emit('voice:peer-joined',{socketId:socket.id,participantId:socket.data.participantId});
+    });
     socket.on('voice:signal', ({ targetSocketId, signal } = {}) => {
       if (!socket.data.roomCode || !targetSocketId || !signal) return;
       io.to(targetSocketId).emit('voice:signal', { from:socket.id, signal, participantId:socket.data.participantId });
@@ -82,8 +127,18 @@ export function registerSockets(io, pool) {
         const r=await pool.query('SELECT * FROM auction_rooms WHERE id=$1 FOR UPDATE',[socket.data.roomId]);
         const room=r.rows[0], state=room.state || {};
         if(action==='start') {
-          if(!state.currentPlayerId) return ack({ok:false,error:'select_player_first'});
+          await ensureAuctionOrder(room, state);
+          if(!state.currentPlayerId) {
+            const next = await selectNextFromSavedOrder(state);
+            if (!next) return ack({ok:false,error:'no_players_remaining'});
+            state.currentPlayerId=Number(next.id); state.currentPlayer=next; state.currentBidPaise=0; state.highestBidder=null;
+          }
           state.status='active'; state.deadline=new Date(Date.now() + Number(room.config.durationSeconds || 10)*1000).toISOString(); room.status='active';
+        } else if(action==='next-player') {
+          await ensureAuctionOrder(room, state);
+          const next = await selectNextFromSavedOrder(state);
+          if (!next) { state.currentPlayerId=null; state.currentPlayer=null; state.status='ended'; state.deadline=null; room.status='ended'; }
+          else { state.currentPlayerId=Number(next.id); state.currentPlayer=next; state.currentBidPaise=0; state.highestBidder=null; state.status='ready'; state.deadline=null; room.status='ready'; }
         } else if(action==='pause') { state.status='paused'; state.deadline=null; room.status='paused'; }
         else if(action==='resume') { state.status='active'; state.deadline=new Date(Date.now()+Number(room.config.durationSeconds||10)*1000).toISOString(); room.status='active'; }
         else if(action==='set-player') {
@@ -94,8 +149,8 @@ export function registerSockets(io, pool) {
         } else if(action==='sell') {
           if(!state.highestBidder || !state.currentPlayerId)return ack({ok:false,error:'no_valid_bid'});
           await pool.query('INSERT INTO room_squad_players(room_id,team_key,player_id,purchase_price_paise) VALUES($1,$2,$3,$4) ON CONFLICT(room_id,player_id) DO NOTHING',[room.id,state.highestBidder.teamKey,state.currentPlayerId,state.currentBidPaise]);
-          state.status='sold';state.soldCount=Number(state.soldCount||0)+1;state.deadline=null;room.status='ready';
-        } else if(action==='unsold') { state.status='unsold';state.unsoldCount=Number(state.unsoldCount||0)+1;state.deadline=null;room.status='ready'; }
+          state.status='sold';state.soldCount=Number(state.soldCount||0)+1;state.deadline=null;room.status='ready';state.completedPlayerIds=Array.isArray(state.completedPlayerIds)?state.completedPlayerIds:[];if(!state.completedPlayerIds.includes(Number(state.currentPlayerId)))state.completedPlayerIds.push(Number(state.currentPlayerId));
+        } else if(action==='unsold') { state.status='unsold';state.unsoldCount=Number(state.unsoldCount||0)+1;state.deadline=null;room.status='ready';state.completedPlayerIds=Array.isArray(state.completedPlayerIds)?state.completedPlayerIds:[];if(state.currentPlayerId&&!state.completedPlayerIds.includes(Number(state.currentPlayerId)))state.completedPlayerIds.push(Number(state.currentPlayerId)); }
         else if(action==='end') { state.status='ended';state.deadline=null;room.status='ended'; }
         else return ack({ok:false,error:'unknown_action'});
         await pool.query('UPDATE auction_rooms SET state=$2::jsonb,status=$3 WHERE id=$1',[room.id,JSON.stringify(state),room.status]);
@@ -105,7 +160,7 @@ export function registerSockets(io, pool) {
 
     socket.on('disconnect', async () => {
       if(socket.data?.roomId && socket.data?.participantId) {
-        try { await pool.query('UPDATE room_participants SET connected=false WHERE room_id=$1 AND participant_id=$2',[socket.data.roomId,socket.data.participantId]); socket.to(socket.data.roomCode).emit('presence:changed',{participantId:socket.data.participantId,connected:false}); } catch {}
+        try { await pool.query('UPDATE room_participants SET connected=false WHERE room_id=$1 AND participant_id=$2',[socket.data.roomId,socket.data.participantId]); socket.to(socket.data.roomCode).emit('presence:changed',{participantId:socket.data.participantId,connected:false}); socket.to(socket.data.roomCode).emit('voice:peer-left',{socketId:socket.id}); } catch {}
       }
     });
   });
