@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import axios from "axios";
 import { io } from "socket.io-client";
 import {
@@ -25,7 +31,7 @@ import {
   Wallet,
   X,
   Volume2,
-  VolumeX
+  VolumeX,
 } from "lucide-react";
 import "./styles/app.css";
 
