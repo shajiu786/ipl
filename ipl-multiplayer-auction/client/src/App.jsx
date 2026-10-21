@@ -2,10 +2,30 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import axios from "axios";
 import { io } from "socket.io-client";
 import {
-  Activity, ArrowRight, Check, ChevronDown, Clipboard,
-  Gavel, Layers, ListOrdered, MessageCircle, Mic, MicOff,
-  Pause, Play, Radio, Send, Settings, ShieldCheck, Trophy,
-  Users, Wallet, X, Volume2, VolumeX
+  Activity,
+  ArrowRight,
+  Check,
+  ChevronDown,
+  Clipboard,
+  Crown,
+  Gavel,
+  Layers,
+  ListOrdered,
+  MessageCircle,
+  Mic,
+  MicOff,
+  Pause,
+  Play,
+  Radio,
+  Send,
+  Settings,
+  ShieldCheck,
+  Trophy,
+  Users,
+  Wallet,
+  X,
+  Volume2,
+  VolumeX
 } from "lucide-react";
 import "./styles/app.css";
 
