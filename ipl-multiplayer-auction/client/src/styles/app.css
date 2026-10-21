@@ -1,9 +1,32 @@
-/* ===== THREE-PAGE IPL AUCTION LAYOUT FIX ===== */
+@import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap");
+
+:root {
+  font-family: "DM Sans", sans-serif;
+  color: #f5f6fa;
+  background: #090b10;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  --bg: #090b10;
+  --panel: #12151d;
+  --panel2: #181c26;
+  --line: #2a303d;
+  --text: #f5f6fa;
+  --muted: #939db0;
+  --gold: #edbd59;
+  --gold-dark: #bd8d31;
+  --green: #63d6a1;
+  --red: #ff6268;
+}
+
+* {
+  box-sizing: border-box;
+}
 
 html,
 body,
 #root {
   width: 100%;
+  min-width: 320px;
   height: 100%;
   margin: 0;
 }
@@ -12,298 +35,1040 @@ body {
   overflow: hidden;
 }
 
-.app-shell {
+button,
+input,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+input,
+select {
+  width: 100%;
+  min-width: 0;
+  color: var(--text);
+  background: #0e1118;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 12px;
+  outline: none;
+}
+
+input:focus,
+select:focus {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 2px #edbd591c;
+}
+
+select option {
+  background: #12151d;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin-top: 0;
+}
+
+h1,
+h2,
+h3 {
+  font-family: "Space Grotesk", sans-serif;
+}
+
+.gold {
+  color: var(--gold);
+}
+
+.muted {
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.eyebrow {
+  color: var(--gold);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.primary-button,
+.secondary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 44px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: 11px 17px;
+  font-weight: 800;
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.primary-button {
+  color: #17130b;
+  background: var(--gold);
+}
+
+.primary-button:hover:not(:disabled) {
+  background: #ffd576;
+  transform: translateY(-1px);
+}
+
+.secondary-button {
+  color: var(--text);
+  background: #202532;
+  border-color: var(--line);
+}
+
+.secondary-button:hover:not(:disabled) {
+  background: #2b3140;
+}
+
+.icon-button {
+  width: 38px;
+  height: 38px;
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  color: var(--text);
+  background: #171b24;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.icon-button:hover {
+  border-color: var(--gold);
+}
+
+.empty-state {
+  display: grid;
+  min-height: 100px;
+  place-items: center;
+  color: var(--muted);
+  text-align: center;
+  padding: 20px;
+}
+
+.toast {
+  position: fixed;
+  z-index: 2000;
+  right: 20px;
+  bottom: 84px;
+  max-width: min(420px, calc(100vw - 32px));
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  justify-content: space-between;
+  padding: 13px 16px;
+  color: #f8f0dc;
+  background: #24221b;
+  border: 1px solid #51452c;
+  border-radius: 12px;
+  box-shadow: 0 10px 40px #0008;
+  font-size: 13px;
+}
+
+.toast button {
+  display: grid;
+  place-items: center;
+  padding: 4px;
+  color: inherit;
+  background: transparent;
+  border: 0;
+}
+
+/* =========================================
+   PAGE 1 — HOME
+========================================= */
+
+.home-page {
+  width: 100%;
+  height: 100dvh;
+  min-height: 0;
+  overflow-y: auto;
+  padding: clamp(18px, 4vw, 48px);
+  background:
+    radial-gradient(ellipse at 10% 10%, #edbd5915, transparent 35%),
+    radial-gradient(ellipse at 90% 85%, #3b476019, transparent 35%),
+    var(--bg);
+}
+
+.home-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-family: "Space Grotesk", sans-serif;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+
+.brand-mark {
+  width: 44px;
+  height: 44px;
+  display: inline-grid;
+  place-items: center;
+  color: var(--gold);
+  background: #edbd5917;
+  border: 1px solid #edbd5950;
+  border-radius: 13px;
+}
+
+.home-hero {
+  width: min(100%, 980px);
+  margin: clamp(35px, 7vh, 75px) auto 35px;
+}
+
+.home-hero > .eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.home-hero > h1 {
+  margin: 16px 0;
+  font-size: clamp(36px, 6vw, 70px);
+  line-height: 1.08;
+  letter-spacing: -0.055em;
+}
+
+.home-hero > h1 span {
+  color: var(--gold);
+}
+
+.home-hero > .muted {
+  max-width: 580px;
+  margin-bottom: 28px;
+}
+
+.home-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.home-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: clamp(18px, 3vw, 28px);
+  background: #141720e8;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+}
+
+.home-card > svg {
+  color: var(--gold);
+}
+
+.home-card h2 {
+  margin: 0 0 5px;
+  font-size: 23px;
+}
+
+.home-card label {
+  margin-top: 4px;
+  color: #b8c0ce;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.home-card .primary-button,
+.home-card .secondary-button {
+  width: 100%;
+  margin-top: 8px;
+}
+
+/* =========================================
+   PAGE 2 — TEAM LOBBY
+========================================= */
+
+.lobby-page {
+  width: 100%;
+  height: 100dvh;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  padding: clamp(16px, 3vw, 32px);
+  background:
+    radial-gradient(ellipse at 90% 0%, #edbd5910, transparent 32%),
+    var(--bg);
+}
+
+.lobby-header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.lobby-header .eyebrow {
+  margin-bottom: 8px;
+}
+
+.lobby-header h1 {
+  margin-bottom: 8px;
+  font-size: clamp(27px, 4vw, 40px);
+}
+
+.lobby-header p:last-child {
+  margin-bottom: 0;
+}
+
+.lobby-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.team-card {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  min-width: 0;
+  padding: 14px;
+  text-align: left;
+  color: var(--text);
+  background: #141720;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.team-card:hover:not(:disabled) {
+  border-color: var(--team-color, var(--gold));
+  background: #1b1f2a;
+}
+
+.team-card.claimed {
+  border-color: color-mix(in srgb, var(--team-color) 45%, var(--line));
+}
+
+.team-card.selected {
+  background: color-mix(in srgb, var(--team-color) 11%, #141720);
+  box-shadow: inset 0 0 0 1px var(--team-color);
+}
+
+.team-logo {
+  width: 43px;
+  height: 43px;
+  flex: 0 0 43px;
+  display: inline-grid;
+  place-items: center;
+  color: var(--team-color, var(--gold));
+  background: color-mix(in srgb, var(--team-color, var(--gold)) 13%, #11141b);
+  border: 1px solid color-mix(in srgb, var(--team-color, var(--gold)) 70%, transparent);
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.team-copy {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.team-copy b {
+  font-size: 13px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.team-copy small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.team-check {
+  flex: 0 0 auto;
+  color: var(--team-color);
+}
+
+.lobby-footer {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  margin-top: 22px;
+  padding-top: 17px;
+  border-top: 1px solid var(--line);
+}
+
+/* =========================================
+   PAGE 3 — PERMANENT LIVE AUCTION
+========================================= */
+
+.auction-app {
   width: 100%;
   height: 100dvh;
   min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  background:
+    radial-gradient(ellipse at 80% 0%, #edbd590a, transparent 35%),
+    var(--bg);
 }
 
-.topbar {
-  flex: 0 0 auto;
-  min-height: 56px;
-}
-
-/* Main auction workspace */
-.workspace {
-  flex: 1 1 auto;
-  min-height: 0;
+.auction-topbar {
+  z-index: 5;
   display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-/* Team lobby is a separate screen */
-.team-lobby-panel.lobby-page {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  margin: 16px;
-  padding: 20px;
-}
-
-.team-lobby-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.team-lobby-card {
-  display: flex;
+  flex: 0 0 54px;
   align-items: center;
-  gap: 12px;
-  padding: 14px;
-  border: 1px solid #303545;
-  border-radius: 12px;
-  background: #151922;
-  color: #f5f6f8;
+  justify-content: space-between;
+  gap: 15px;
+  min-width: 0;
+  padding: 6px 18px;
+  background: #0c0e13;
+  border-bottom: 1px solid var(--line);
 }
 
-.team-lobby-name {
+.auction-topbar .home-brand {
+  flex: 0 0 auto;
+  font-size: 13px;
+}
+
+.auction-topbar .brand-mark {
+  width: 36px;
+  height: 36px;
+}
+
+.room-info {
   display: flex;
   flex: 1;
-  min-width: 0;
-  flex-direction: column;
-  gap: 5px;
-}
-
-.team-lobby-name b {
-  overflow-wrap: anywhere;
-}
-
-.team-lobby-name small {
-  color: #aab2c0;
-}
-
-.team-lobby-card.claimed {
-  border-color: var(--team-color, #303545);
-}
-
-.team-lobby-card.my-team {
-  box-shadow: inset 0 0 0 1px var(--team-color, #d9a441);
-}
-
-.team-logo-badge {
-  display: inline-flex;
-  flex: 0 0 44px;
-  width: 44px;
-  height: 44px;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--team-color, #d9a441);
-  border-radius: 50%;
-  background: color-mix(
-    in srgb,
-    var(--team-color, #d9a441) 18%,
-    #101218
-  );
-  color: var(--team-color, #d9a441);
+  gap: 13px;
+  min-width: 0;
   font-size: 12px;
+}
+
+.room-info > b {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-pill {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+  color: #c6cbd5;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 10px;
   font-weight: 800;
 }
 
-.lobby-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 20px;
+.status-pill i {
+  width: 7px;
+  height: 7px;
+  background: #e5ad49;
+  border-radius: 50%;
 }
 
-/* Auction page: top area plus lower content */
-.auction-stage {
+.status-pill.active i {
+  background: var(--green);
+  box-shadow: 0 0 9px #63d6a177;
+}
+
+.code-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #e5c782;
+  background: #181b24;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 11px;
+}
+
+/* Auction top section: about 30% of the available screen */
+.live-auction-panel {
   flex: 0 0 30%;
   height: 30%;
-  min-height: 240px;
+  min-height: 230px;
   max-height: 340px;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: auto;
   padding: 12px 18px;
-  box-sizing: border-box;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(135deg, #11141c, #0c0f15);
 }
 
-.auction-stage .section-heading {
-  margin-bottom: 10px;
+.live-panel-title {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
 }
 
-.auction-stage .section-heading h1 {
-  font-size: clamp(18px, 2vw, 26px);
+.live-panel-title .eyebrow {
+  margin-bottom: 4px;
 }
 
-.auction-stage .auction-grid {
+.live-panel-title h1 {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0;
+  font-size: clamp(19px, 2.1vw, 27px);
+}
+
+.live-badge {
+  display: inline-block;
+  padding: 5px 9px;
+  color: var(--red);
+  background: #ff62681a;
+  border: 1px solid #ff62683d;
+  border-radius: 6px;
+  font: 800 9px "DM Sans", sans-serif;
+  letter-spacing: 0.1em;
+}
+
+.auction-counts {
+  display: flex;
+  flex: 0 0 auto;
+  gap: clamp(10px, 2vw, 28px);
+}
+
+.auction-counts span {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.auction-counts b {
+  font-size: 20px;
+}
+
+.auction-counts small {
+  color: var(--muted);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+}
+
+.live-player-bidding {
   display: grid;
+  flex: 1;
+  min-height: 0;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 12px;
 }
 
-.auction-stage .player-card,
-.auction-stage .bid-card {
+.current-player-card,
+.bidding-card {
+  min-width: 0;
+  min-height: 0;
+  padding: 12px;
+  background: #171b24;
+  border: 1px solid #2b3140;
+  border-radius: 13px;
+}
+
+.current-player-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.player-placeholder {
+  display: flex;
+  flex: 0 0 88px;
+  width: 88px;
+  height: 95px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 7px;
+  color: #8b7445;
+  background: linear-gradient(145deg, #30291c, #141720);
+  border: 1px solid #4a3c25;
+  border-radius: 10px;
+}
+
+.player-placeholder small {
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.player-description {
+  flex: 1;
   min-width: 0;
 }
 
-.auction-stage .player-art {
-  min-height: 110px;
+.role-chip {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 5px 8px;
+  color: #e3c57e;
+  background: #edbd5917;
+  border: 1px solid #edbd5935;
+  border-radius: 6px;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.auction-stage .bid-button {
-  width: 100%;
-  min-height: 44px;
+.player-description h2 {
+  margin: 7px 0 4px;
+  font-size: clamp(17px, 2vw, 24px);
+  overflow-wrap: anywhere;
 }
 
-/* Remaining 70%: selected navigation content */
-.activity-grid,
-.section-content {
-  flex: 1 1 70%;
-  min-height: 0;
-  overflow: auto;
-  padding: 12px 18px 18px;
-  box-sizing: border-box;
-  overscroll-behavior: contain;
+.player-description p {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 11px;
 }
 
-.activity-grid {
+.base-price {
   display: flex;
   flex-direction: column;
+  gap: 3px;
 }
 
-.activity-grid .combined-feed {
-  flex: 1;
-  min-height: 0;
+.base-price small,
+.bid-values small {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+}
+
+.base-price b {
+  color: var(--gold);
+  font-size: 14px;
+}
+
+.bidding-card {
   display: flex;
   flex-direction: column;
+  justify-content: center;
+  gap: 9px;
 }
 
-.activity-grid .chat-list {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
+.bid-clock {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
 }
 
-.section-content .content-panel {
-  margin-bottom: 12px;
+.bid-clock span {
+  color: var(--muted);
+  font-size: 9px;
+  letter-spacing: 0.09em;
 }
 
-/* Keep navigation visible at the bottom */
-.bottom-nav {
-  position: relative;
-  z-index: 20;
-  flex: 0 0 auto;
-  min-height: 64px;
-  padding-bottom: env(safe-area-inset-bottom);
+.bid-clock strong {
+  font-size: clamp(21px, 3vw, 32px);
+  font-variant-numeric: tabular-nums;
 }
 
-/* Sale celebration overlay */
-.sale-celebration {
-  position: fixed;
-  inset: 0;
-  z-index: 1000;
+.bid-clock strong.urgent {
+  color: var(--red);
+  animation: timer-pulse 0.8s infinite alternate;
+}
+
+@keyframes timer-pulse {
+  to { opacity: 0.55; }
+}
+
+.bid-values {
   display: grid;
-  place-items: center;
-  padding: 20px;
-  background: rgb(0 0 0 / 75%);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
 }
 
-.sale-celebration-card {
-  width: min(100%, 420px);
-  padding: 28px;
-  border: 1px solid var(--team-color, #d9a441);
-  border-radius: 20px;
-  background: #151922;
-  color: #fff;
-  text-align: center;
-  box-shadow: 0 0 45px
-    color-mix(in srgb, var(--team-color, #d9a441) 30%, transparent);
+.bid-values > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
 }
 
-.sale-title {
-  color: var(--team-color, #d9a441);
-  font-size: 42px;
+.bid-values b {
+  overflow: hidden;
+  font-size: clamp(13px, 1.7vw, 20px);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bid-values > div:first-child b {
+  color: var(--gold);
+}
+
+.next-bid-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.next-bid-label b {
+  color: var(--gold);
+  font-size: 12px;
+}
+
+.bid-now-button {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 42px;
+  color: #17130b;
+  background: var(--gold);
+  border: 0;
+  border-radius: 9px;
   font-weight: 900;
+  font-size: 13px;
+  transition: background 0.15s ease, transform 0.15s ease;
 }
 
-.sale-price {
-  display: block;
-  margin: 12px 0;
-  font-size: 28px;
+.bid-now-button:hover:not(:disabled) {
+  background: #ffda83;
+  transform: translateY(-1px);
 }
 
-.sale-winning-team {
+.bid-now-button:disabled {
+  color: #b7a880;
+  background: #534a35;
+}
+
+.purse-summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.purse-summary svg {
+  color: var(--gold);
+}
+
+.purse-summary b {
+  margin-left: auto;
+  color: var(--text);
+}
+
+.host-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.host-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 6px 9px;
+  color: #e0e4ed;
+  background: #242a36;
+  border: 1px solid #373e4d;
+  border-radius: 7px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+/* =========================================
+   BOTTOM NAVIGATION
+========================================= */
+
+.bottom-nav {
+  z-index: 10;
+  display: grid;
+  flex: 0 0 58px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  padding: 6px 14px;
+  background: #0c0e13;
+  border-bottom: 1px solid var(--line);
+}
+
+.bottom-nav button {
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  color: #939db0;
+  background: transparent;
+  border: 0;
+  border-radius: 9px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.bottom-nav button:hover {
+  color: var(--text);
+  background: #1a1e28;
+}
+
+.bottom-nav button.active {
+  color: var(--gold);
+  background: #edbd5914;
+}
+
+/* =========================================
+   LOWER 70% CONTENT AREA
+========================================= */
+
+.lower-content {
+  flex: 1 1 70%;
+  min-height: 0;
+  overflow: hidden;
+  padding: 12px 16px 16px;
+}
+
+.content-panel {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 14px;
+  background: #12151d;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+}
+
+.panel-header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
   gap: 12px;
-  margin: 18px 0;
+  margin-bottom: 12px;
 }
 
-.celebration-confetti {
-  position: absolute;
-  top: 12%;
-  color: var(--team-color, #d9a441);
-  font-size: 30px;
-  animation: confetti-float 1.2s ease-in-out infinite alternate;
+.panel-header > div:first-child {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
 }
 
-@keyframes confetti-float {
-  from {
-    transform: translateY(0) rotate(-8deg);
-  }
-  to {
-    transform: translateY(18px) rotate(8deg);
-  }
+.panel-header > div:first-child svg {
+  flex: 0 0 auto;
+  color: var(--gold);
 }
 
-/* Mobile layout */
-@media (max-width: 650px) {
-  .topbar {
-    min-height: 48px;
-    padding: 8px 12px;
-  }
-
-  .room-label {
-    display: none;
-  }
-
-  .auction-stage {
-    flex-basis: 34%;
-    height: 34%;
-    min-height: 245px;
-    padding: 8px;
-  }
-
-  .auction-stage .auction-grid {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 8px;
-  }
-
-  .auction-stage .player-art {
-    min-height: 75px;
-  }
-
-  .auction-stage .host-controls {
-    display: none;
-  }
-
-  .activity-grid,
-  .section-content {
-    padding: 8px 10px 12px;
-  }
-
-  .team-lobby-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .lobby-actions {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .bottom-nav {
-    min-height: 60px;
-  }
-
-  .bottom-nav button span {
-    font-size: 9px;
-  }
+.panel-header h2 {
+  margin: 0;
+  font-size: 17px;
 }
+
+.sound-controls {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+/* =========================================
+   LIVE MESSAGES / CHAT / BID HISTORY
+========================================= */
+
+.messages-panel {
+  gap: 0;
+}
+
+.message-feed {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 5px 2px;
+  overscroll-behavior: contain;
+  scrollbar-color: #41495b transparent;
+  scrollbar-width: thin;
+}
+
+.feed-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 8px;
+  border-bottom: 1px solid #292e39;
+}
+
+.feed-icon {
+  display: grid;
+  flex: 0 0 29px;
+  width: 29px;
+  height: 29px;
+  place-items: center;
+  color: var(--gold);
+  background: #edbd5915;
+  border-radius: 8px;
+}
+
+.feed-item > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.feed-item b {
+  font-size: 12px;
+}
+
+.feed-item p {
+  margin: 3px 0 0;
+  color: #c3cad6;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.feed-item > small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.bid-message .feed-icon {
+  color: var(--green);
+  background: #63d6a116;
+}
+
+.chat-form {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 9px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.chat-form input {
+  flex: 1;
+}
+
+.chat-form .primary-button {
+  width: 46px;
+  flex: 0 0 46px;
+  padding: 10px;
+}
+
+/* =========================================
+   SQUADS AND PURSE
+========================================= */
+
+.squad-grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
+  gap: 12px;
+  overflow-y: auto;
+  padding-right: 3px;
+}
+
+.squad-card {
+  min-width: 0;
+  padding: 13px;
+  background: #171b24;
+  border: 1px solid var(--line);
+  border-top: 2px solid var(--team-color, var(--gold));
+  border-radius: 11px;
+}
+
+.squad-team-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.squad-team-heading > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.squad-team-heading b {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.squad-team-heading small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.purse-stats {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 13px 0 9px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.purse-stats b {
+  display: block;
+  margin-top: 4px;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.remaining-purse {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 9px 0;
+  color: var(--muted);
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  font-size: 10px;
+}
+
+.remaining-purse b {
+  color: var(--green);
+}
+
+.squad-player {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10
