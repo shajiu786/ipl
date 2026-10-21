@@ -1,37 +1,10 @@
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import { io } from "socket.io-client";
 import {
-  Activity,
-  ArrowRight,
-  Check,
-  ChevronDown,
-  Clipboard,
-  Crown,
-  Gavel,
-  Layers,
-  ListOrdered,
-  MessageCircle,
-  Mic,
-  MicOff,
-  Pause,
-  Play,
-  Radio,
-  Send,
-  Settings,
-  ShieldCheck,
-  Trophy,
-  Users,
-  Wallet,
-  X,
-  Volume2,
-  VolumeX,
+  ArrowRight, Check, Clipboard, Crown, Gavel, Layers, ListOrdered,
+  MessageCircle, Mic, MicOff, Pause, Play, Radio, Send, Trophy,
+  Users, Wallet, X, Volume2, VolumeX
 } from "lucide-react";
 import "./styles/app.css";
 
@@ -224,7 +197,13 @@ export default function App() {
       });
     });
 
-    socket.on("auction:state", state => setAuction(state));
+    socket.on("auction:state", state => {
+      setAuction(state);
+      // When the host starts the auction, every participant leaves the lobby.
+      if (state?.status === "active" || state?.status === "paused" || state?.status === "sold" || state?.status === "unsold" || state?.status === "ended") {
+        setPage("auction");
+      }
+    });
     socket.on("bid:accepted", event => {
       setBids(old => [event.bid, ...old].slice(0, 100));
       setNotice(`${event.participantName || "A participant"} placed a bid`);
@@ -283,11 +262,13 @@ export default function App() {
         displayName: displayName.trim(),
         participantId: id
       });
+      const rawParticipant = response.data?.participant || {};
       const p = {
-        participantId: response.data.participant.participantId || id,
-        displayName: displayName.trim(),
-        isHost: true,
-        teamKey: null
+        ...rawParticipant,
+        participantId: rawParticipant.participantId || rawParticipant.participant_id || id,
+        displayName: rawParticipant.displayName || rawParticipant.display_name || displayName.trim(),
+        isHost: rawParticipant.isHost ?? rawParticipant.is_host ?? true,
+        teamKey: rawParticipant.teamKey || rawParticipant.team_key || null
       };
       await enterRoom(response.data.room.code, p);
     } catch (error) {
@@ -353,10 +334,40 @@ export default function App() {
   };
 
   const hostAction = (action, payload = {}) => {
-    if (!socketRef.current) return setNotice("Connect to the room first.");
-    socketRef.current.emit("auction:host-action", { action, payload }, response => {
-      if (!response?.ok) return setNotice(response?.error || "Host action failed");
-      setAuction(response.state);
+    const socket = socketRef.current;
+    if (!socket) return setNotice("Connect to the room first.");
+
+    const sendAction = (nextAction, nextPayload = {}, onSuccess) => {
+      socket.emit("auction:host-action", { action: nextAction, payload: nextPayload }, response => {
+        if (!response?.ok) {
+          setNotice(response?.error || `Host action '${nextAction}' failed`);
+          return;
+        }
+        if (response.state) setAuction(response.state);
+        if (onSuccess) onSuccess(response);
+        else setNotice(nextAction === "start" ? "Auction started" : "Auction updated");
+      });
+    };
+
+    // The backend requires a current player before it can start the timer.
+    // If none is selected, select the first imported player, then start.
+    if (action === "start" && !auction.currentPlayerId) {
+      if (!players.length) {
+        setNotice("No players are loaded. Check the players API first.");
+        return;
+      }
+      const randomized = [...players].sort(() => Math.random() - 0.5);
+      sendAction("set-player", { playerId: randomized[0].id }, () => {
+        sendAction("start", {}, () => {
+          setPage("auction");
+          setNotice("Auction started");
+        });
+      });
+      return;
+    }
+
+    sendAction(action, payload, () => {
+      if (action === "start" || action === "resume") setPage("auction");
       setNotice(action === "start" ? "Auction started" : "Auction updated");
     });
   };
