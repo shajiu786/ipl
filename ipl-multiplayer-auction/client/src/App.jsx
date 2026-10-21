@@ -7,7 +7,7 @@ import {
   Pause, Play, Radio, Send, Settings, ShieldCheck, Trophy,
   Users, Wallet, X, Volume2, VolumeX
 } from "lucide-react";
-import "./App.css";
+import "./styles/app.css";
 
 const API = (import.meta.env.VITE_API_URL || "http://localhost:4000").replace(/\/$/, "");
 const SOCKET_URL = (import.meta.env.VITE_SOCKET_URL || API).replace(/\/$/, "");
