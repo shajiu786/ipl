@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: ipl-multiplayer-auction-api
+    runtime: node
+    rootDir: server
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: CLIENT_ORIGIN
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
