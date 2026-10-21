@@ -133,6 +133,21 @@ export default function App() {
     <div className="workspace">
       <section className="auction-stage">
         <div className="section-heading"><div><div className="eyebrow">LOT {auction.currentPlayerId||'—'} <span>•</span> IPL PLAYER AUCTION</div><h1>Live auction <span className="live-badge"><span className="live-dot"/> LIVE</span></h1></div><div className="stage-stats"><div><strong>{auction.soldCount||0}</strong><small>SOLD</small></div><div><strong>{auction.unsoldCount||0}</strong><small>UNSOLD</small></div><div><strong>{players.length}</strong><small>LOADED</small></div></div></div>
+        {isHost&&<details className="player-picker" style={{marginBottom:16,border:'1px solid #2b303b',borderRadius:12,background:'#10131a',padding:12}}>
+          <summary style={{cursor:'pointer',fontWeight:700,color:'#f0bd55'}}>Select current player · {players.length} loaded</summary>
+          <div style={{display:'flex',gap:8,marginTop:12,flexWrap:'wrap'}}>
+            <input aria-label="Search players" value={playerQuery} onChange={e=>setPlayerQuery(e.target.value)} placeholder="Search player name…" style={{flex:'1 1 220px',minWidth:0,padding:'10px 12px',borderRadius:8,border:'1px solid #343b49',background:'#0b0e13',color:'#fff'}} />
+            <button className="secondary" onClick={()=>loadPlayers(playerQuery)}>Search</button>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))',gap:8,marginTop:12,maxHeight:260,overflowY:'auto'}}>
+            {players.map(player=><button key={player.id} type="button" onClick={()=>choosePlayer(player)} style={{textAlign:'left',padding:10,border:'1px solid #2b303b',borderRadius:8,background:Number(auction.currentPlayerId)===Number(player.id)?'#352b17':'#151922',color:'#f5f6f8',cursor:'pointer'}}>
+              <strong style={{display:'block'}}>{player.name}</strong>
+              <span style={{display:'block',fontSize:12,color:'#aab2c0',marginTop:4}}>{player.role||'Role unavailable'} · Base {player.base_price_paise?money(player.base_price_paise):'—'} · ID {player.id}</span>
+            </button>)}
+            {!players.length&&<p style={{color:'#aab2c0'}}>No players found. Try another search.</p>}
+          </div>
+          <p style={{fontSize:12,color:'#aab2c0',marginBottom:0}}>Choose a player here, then click Start in Host Controls to begin bidding.</p>
+        </details>}
         <div className="auction-grid">
           <article className="player-card">
             <div className="player-art">{currentPlayer?.photo_url?<img src={currentPlayer.photo_url} alt={currentPlayer.name}/>:<div className="player-placeholder"><span>IPL</span><Gavel size={46}/><small>PLAYER PROFILE</small></div>}<div className="player-label">CURRENT PLAYER</div></div>
