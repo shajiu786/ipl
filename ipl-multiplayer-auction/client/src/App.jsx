@@ -1,210 +1,770 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import axios from 'axios';
-import { io } from 'socket.io-client';
-import { Activity, ArrowUpRight, BadgeIndianRupee, Check, ChevronDown, CircleHelp, Clipboard, Crown, Gavel, Headphones, Home, ListOrdered, MessageCircle, Mic, MicOff, Pause, Play, Radio, Search, Settings, ShieldCheck, Users, Wallet, X } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import axios from "axios";
+import { io } from "socket.io-client";
+import {
+  Activity, ArrowRight, Check, ChevronDown, Clipboard,
+  Gavel, Layers, ListOrdered, MessageCircle, Mic, MicOff,
+  Pause, Play, Radio, Send, Settings, ShieldCheck, Trophy,
+  Users, Wallet, X, Volume2, VolumeX
+} from "lucide-react";
+import "./App.css";
 
-const API = (import.meta.env.VITE_API_URL || 'http://localhost:4000').replace(/\/$/,'');
-const SOCKET_URL = (import.meta.env.VITE_SOCKET_URL || API).replace(/\/$/,'');
-const TEAM_LIST = [['csk','Chennai Super Kings'],['mi','Mumbai Indians'],['rcb','Royal Challengers Bengaluru'],['kkr','Kolkata Knight Riders'],['rr','Rajasthan Royals'],['srh','Sunrisers Hyderabad'],['dc','Delhi Capitals'],['pbks','Punjab Kings'],['gt','Gujarat Titans'],['lsg','Lucknow Super Giants']];
-const TEAM_COLORS={csk:'#f4c542',mi:'#4da3ff',rcb:'#f05252',kkr:'#a78bfa',rr:'#f472b6',srh:'#fb923c',dc:'#60a5fa',pbks:'#ef4444',gt:'#9ca3af',lsg:'#34d399'};
-const money = paise => `₹${(Number(paise || 0)/1000000000).toFixed(2)} Cr`;
-const idFor = () => { let v=sessionStorage.getItem('iplParticipantId'); if(!v){v=crypto.randomUUID();sessionStorage.setItem('iplParticipantId',v);} return v; };
-const explain = code => ({team_already_taken:'That franchise is already taken.',auction_not_active:'The auction is not active.',no_current_player:'The host has not selected a player.',timer_expired:'The countdown has expired.',already_highest_bidder:'Your team is already the highest bidder.',insufficient_purse:'Your team does not have enough purse.',not_a_room_member:'You are not a participant in this room.',host_only:'Only the host can perform this action.'}[code] || String(code || 'Something went wrong').replaceAll('_',' '));
+const API = (import.meta.env.VITE_API_URL || "http://localhost:4000").replace(/\/$/, "");
+const SOCKET_URL = (import.meta.env.VITE_SOCKET_URL || API).replace(/\/$/, "");
+const api = axios.create({ baseURL: API });
+
+const TEAMS = [
+  { key: "csk", short: "CSK", name: "Chennai Super Kings", color: "#F5C542" },
+  { key: "mi", short: "MI", name: "Mumbai Indians", color: "#3986E8" },
+  { key: "rcb", short: "RCB", name: "Royal Challengers Bengaluru", color: "#E64C54" },
+  { key: "kkr", short: "KKR", name: "Kolkata Knight Riders", color: "#A58AE8" },
+  { key: "rr", short: "RR", name: "Rajasthan Royals", color: "#F17DB7" },
+  { key: "srh", short: "SRH", name: "Sunrisers Hyderabad", color: "#F18C35" },
+  { key: "dc", short: "DC", name: "Delhi Capitals", color: "#62A9EF" },
+  { key: "pbks", short: "PBKS", name: "Punjab Kings", color: "#E95B65" },
+  { key: "gt", short: "GT", name: "Gujarat Titans", color: "#A6B2C3" },
+  { key: "lsg", short: "LSG", name: "Lucknow Super Giants", color: "#54C5C4" }
+];
+
+const NAV = [
+  { id: "messages", label: "Live Messages", Icon: MessageCircle },
+  { id: "squads", label: "Squads & Purse", Icon: Users },
+  { id: "xi", label: "Playing XI", Icon: ListOrdered },
+  { id: "sets", label: "Sets", Icon: Layers }
+];
+
+const makeId = () => {
+  let id = sessionStorage.getItem("iplParticipantId");
+  if (!id) {
+    id = crypto.randomUUID();
+    sessionStorage.setItem("iplParticipantId", id);
+  }
+  return id;
+};
+
+const teamInfo = key => TEAMS.find(t => t.key === key);
+
+function money(paise) {
+  return `₹${(Number(paise || 0) / 1000000000).toFixed(2)} Cr`;
+}
+
+function getError(error, fallback = "Something went wrong") {
+  return error?.response?.data?.error || error?.message || fallback;
+}
 
 export default function App() {
-  const [view,setView]=useState('landing');
-  const [roomCode,setRoomCode]=useState('');
-  const [roomName,setRoomName]=useState('Friday Night Auction');
-  const [displayName,setDisplayName]=useState('');
-  const [teamKey,setTeamKey]=useState('csk');
-  const [participant,setParticipant]=useState(null);
-  const [room,setRoom]=useState(null);
-  const [participants,setParticipants]=useState([]);
-  const [players,setPlayers]=useState([]);
-  const [playerQuery,setPlayerQuery]=useState('');
-  const [auction,setAuction]=useState({status:'waiting',currentBidPaise:0,deadline:null,auctionVersion:1});
-  const [bids,setBids]=useState([]);
-  const [messages,setMessages]=useState([]);
-  const [chatText,setChatText]=useState('');
-  const [notice,setNotice]=useState('');
-  const [busy,setBusy]=useState(false);
-  const [remaining,setRemaining]=useState(0);
-  const [purses,setPurses]=useState([]);
-  const [squads,setSquads]=useState([]);
-  const [xi,setXi]=useState([]);
-  const [xiTeam,setXiTeam]=useState('csk');
-  const [voiceJoined,setVoiceJoined]=useState(false);
-  const [muted,setMuted]=useState(false);
-  const [speechListening,setSpeechListening]=useState(false);
-  const [speechText,setSpeechText]=useState('');
-  const [soundEnabled,setSoundEnabled]=useState(true);
-  const [saleCelebration,setSaleCelebration]=useState(null);
-  const socketRef=useRef(null);
-  const chatRef=useRef(null);
-  const bottomRef=useRef(null);
-  const lastMessageCount=useRef(0);
-  const localStreamRef=useRef(null);
-  const peersRef=useRef(new Map());
-  const [remoteStreams,setRemoteStreams]=useState([]);
-  const sectionRef=useRef(null);
-  const isHost=Boolean(participant?.isHost || participant?.is_host);
-  const myTeam=participant?.teamKey || participant?.team_key;
-  const currentPlayer=auction.currentPlayer || null;
-  const nextBid=useMemo(()=>Number(auction.currentBidPaise||0)===0?Number(room?.config?.openingBidPaise||200000000):Number(auction.currentBidPaise)+Number(room?.config?.incrementPaise||250000000),[auction.currentBidPaise,room?.config]);
-  const api=axios.create({baseURL:API});
+  const [page, setPage] = useState("home");
+  const [tab, setTab] = useState("messages");
 
-  const loadPlayers=useCallback(async(q='')=>{try{const r=await api.get('/api/players',{params:{q,limit:300}});setPlayers(r.data.data||[]);}catch{}},[]);
-  const loadRoomData=useCallback(async(code)=>{
+  const [displayName, setDisplayName] = useState("");
+  const [roomName, setRoomName] = useState("Friday Night Auction");
+  const [roomCodeInput, setRoomCodeInput] = useState("");
+  const [roomCode, setRoomCode] = useState("");
+  const [teamKey, setTeamKey] = useState("csk");
+
+  const [participant, setParticipant] = useState(null);
+  const [room, setRoom] = useState(null);
+  const [participants, setParticipants] = useState([]);
+  const [players, setPlayers] = useState([]);
+  const [auction, setAuction] = useState({ status: "waiting", currentBidPaise: 0 });
+  const [bids, setBids] = useState([]);
+  const [messages, setMessages] = useState([]);
+  const [chatText, setChatText] = useState("");
+  const [notice, setNotice] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [remaining, setRemaining] = useState(0);
+  const [purses, setPurses] = useState([]);
+  const [squads, setSquads] = useState([]);
+  const [xi, setXi] = useState([]);
+  const [xiTeam, setXiTeam] = useState("csk");
+  const [playerSearch, setPlayerSearch] = useState("");
+  const [setsFilter, setSetsFilter] = useState("all");
+  const [soundOn, setSoundOn] = useState(true);
+  const [micOn, setMicOn] = useState(false);
+  const [muted, setMuted] = useState(false);
+  const [sale, setSale] = useState(null);
+
+  const socketRef = useRef(null);
+  const audioRef = useRef(null);
+  const localStreamRef = useRef(null);
+  const peersRef = useRef({});
+  const saleTimerRef = useRef(null);
+
+  const participantId = participant?.participantId || participant?.participant_id;
+  const isHost = Boolean(participant?.isHost || participant?.is_host);
+  const myTeam = participant?.teamKey || participant?.team_key;
+  const currentPlayer = auction.currentPlayer || null;
+  const leadingTeam = teamInfo(auction.highestBidder?.teamKey);
+
+  const nextBid = useMemo(() => {
+    const current = Number(auction.currentBidPaise || 0);
+    return current === 0
+      ? Number(room?.config?.openingBidPaise || 200000000)
+      : current + Number(room?.config?.incrementPaise || 250000000);
+  }, [auction.currentBidPaise, room?.config]);
+
+  const myPurse = purses.find(p => p.team_key === myTeam);
+  const mySquad = squads.filter(p => p.team_key === myTeam);
+  const selectedXI = xi.filter(p => p.team_key === xiTeam);
+
+  const filteredPlayers = players.filter(p =>
+    `${p.name || ""} ${p.role || ""}`.toLowerCase().includes(playerSearch.toLowerCase())
+  );
+
+  const teamOwners = useMemo(() => {
+    const owners = {};
+    participants.forEach(p => {
+      const key = p.team_key || p.teamKey;
+      if (key) owners[key] = p.display_name || p.displayName || "Participant";
+    });
+    return owners;
+  }, [participants]);
+
+  const loadPlayers = useCallback(async () => {
     try {
-      const [roomR,bidR,purseR,squadR,xiR,chatR]=await Promise.all([
-        api.get(`/api/rooms/${code}`),api.get(`/api/rooms/${code}/bids`),api.get(`/api/rooms/${code}/purses`),
-        api.get(`/api/rooms/${code}/squads`),api.get(`/api/rooms/${code}/playing-xi`),
-        api.get(`/api/rooms/${code}/chat`).catch(()=>({data:{data:[]}}))
+      const response = await api.get("/api/players", { params: { limit: 500 } });
+      setPlayers(response.data.data || []);
+    } catch (error) {
+      setNotice(`Could not load players: ${getError(error)}`);
+    }
+  }, []);
+
+  const loadRoomData = useCallback(async code => {
+    if (!code) return;
+    try {
+      const [roomR, bidR, purseR, squadR, xiR, chatR] = await Promise.all([
+        api.get(`/api/rooms/${code}`),
+        api.get(`/api/rooms/${code}/bids`).catch(() => ({ data: { data: [] } })),
+        api.get(`/api/rooms/${code}/purses`).catch(() => ({ data: { data: [] } })),
+        api.get(`/api/rooms/${code}/squads`).catch(() => ({ data: { data: [] } })),
+        api.get(`/api/rooms/${code}/playing-xi`).catch(() => ({ data: { data: [] } })),
+        api.get(`/api/rooms/${code}/chat`).catch(() => ({ data: { data: [] } }))
       ]);
-      setRoom(roomR.data.room);setParticipants(roomR.data.participants||[]);setAuction(roomR.data.room.state||{status:roomR.data.room.status,currentBidPaise:0});
-      setBids(bidR.data.data||[]);setPurses(purseR.data.data||[]);setSquads(squadR.data.data||[]);setXi(xiR.data.data||[]);setMessages(chatR.data.data||[]);
-    } catch(e){setNotice(explain(e.response?.data?.error||'could_not_load_room'));}
-  },[]);
-  const enterRoom=useCallback(async(code,p)=>{
-    setParticipant(p);setRoomCode(code);setView('lobby');
-    const socket=io(SOCKET_URL,{transports:['websocket','polling']});socketRef.current=socket;
-    socket.on('connect',()=>socket.emit('room:join-live',{code,participantId:p.participantId||p.participant_id},res=>{if(res?.ok){setAuction(res.room.state||{});setNotice('Connected to live auction');}else setNotice(explain(res?.error));}));
-    socket.on('auction:state',s=>{setAuction(s);if(s?.status==='sold'&&s?.currentPlayer){setSaleCelebration({player:s.currentPlayer,teamKey:s.highestBidder?.teamKey,teamName:s.highestBidder?.teamName,bid:s.currentBidPaise});if(soundEnabled){try{const ctx=new (window.AudioContext||window.webkitAudioContext)();const osc=ctx.createOscillator();const gain=ctx.createGain();osc.connect(gain);gain.connect(ctx.destination);osc.frequency.setValueAtTime(880,ctx.currentTime);osc.frequency.setValueAtTime(1175,ctx.currentTime+0.12);gain.gain.setValueAtTime(0.12,ctx.currentTime);gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.35);osc.start();osc.stop(ctx.currentTime+0.35);}catch{}}window.setTimeout(()=>setSaleCelebration(null),4500);}});
-    socket.on('bid:accepted',e=>{setBids(old=>[e.bid,...old].slice(0,100));setMessages(old=>[{id:`bid-${e.bid.id||Date.now()}`,eventType:'bid',display_name:e.participantName,team_key:e.teamKey,message:`bid ${money(e.bid.amount_paise)} on ${e.state?.currentPlayer?.name||'the current player'}`,created_at:new Date().toISOString(),amount_paise:e.bid.amount_paise},...old].slice(0,150));setNotice(`${e.participantName} bid ${money(e.bid.amount_paise)}`);});
-    socket.on('chat:message',m=>setMessages(old=>[...old,m]));
-    socket.on('presence:changed',()=>loadRoomData(code));
-    socket.on('connect_error',()=>setNotice('Connection issue. Retrying…'));
-    socket.on('voice:peers', peers=>{ if(localStreamRef.current) peers.forEach(peer=>createVoicePeer(peer.socketId,true)); });
-    socket.on('voice:peer-joined', peer=>{ if(localStreamRef.current) createVoicePeer(peer.socketId,false); });
-    socket.on('voice:peer-left', ({socketId})=>{peersRef.current.get(socketId)?.close();peersRef.current.delete(socketId);setRemoteStreams(old=>old.filter(x=>x.id!==socketId));});
-    socket.on('voice:signal', async ({from,signal})=>{try{let pc=peersRef.current.get(from);if(!pc)pc=createVoicePeer(from,false);if(signal?.type){await pc.setRemoteDescription(new RTCSessionDescription(signal));if(signal.type==='offer'){const answer=await pc.createAnswer();await pc.setLocalDescription(answer);socket.emit('voice:signal',{targetSocketId:from,signal:pc.localDescription});}}else if(signal?.candidate){await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));}}catch(err){console.error('Voice signaling error',err);}});
-    await loadRoomData(code); await loadPlayers();
-  },[loadRoomData,loadPlayers]);
-  useEffect(()=>()=>{socketRef.current?.disconnect();},[]);
-  useEffect(()=>{if(!auction.deadline){setRemaining(0);return;}const tick=()=>setRemaining(Math.max(0,Math.ceil((new Date(auction.deadline).getTime()-Date.now())/1000)));tick();const t=setInterval(tick,250);return()=>clearInterval(t);},[auction.deadline,auction.auctionVersion]);
-  useEffect(()=>{if(['lobby','auction','messages','squads','xi','sets','more'].includes(view)&&roomCode){const t=setInterval(()=>loadRoomData(roomCode),12000);return()=>clearInterval(t);}},[view,roomCode,loadRoomData]);
-  useEffect(()=>{if(['lobby','auction','messages','squads','xi','sets','more'].includes(view))loadPlayers(playerQuery);},[playerQuery,view,loadPlayers]);
 
-  const createRoom=async()=>{
-    if(!displayName.trim())return setNotice('Enter your display name first.');
-    setBusy(true);try{const r=await api.post('/api/rooms',{name:roomName,displayName,participantId:idFor()});const p={participantId:r.data.participant.participantId,displayName,isHost:true,teamKey:null};await enterRoom(r.data.room.code,p);}catch(e){setNotice(explain(e.response?.data?.error||'room_create_failed'));}finally{setBusy(false);}
-  };
-  const joinRoom=async()=>{
-    if(!displayName.trim()||!roomCode.trim())return setNotice('Enter your name and room code.');
-    setBusy(true);try{const r=await api.post(`/api/rooms/${roomCode.trim().toUpperCase()}/join`,{participantId:idFor(),displayName,teamKey});const p={...r.data.participant,participantId:r.data.participant.participant_id||idFor(),teamKey:r.data.participant.team_key||teamKey};await enterRoom(roomCode.trim().toUpperCase(),p);}catch(e){setNotice(explain(e.response?.data?.error||'room_join_failed'));}finally{setBusy(false);}
-  };
-  const placeBid=()=>{if(!socketRef.current)return setNotice('Connect to a room before bidding.');setNotice('Submitting bid…');socketRef.current.emit('bid:place',{code:roomCode,participantId:participant?.participantId||participant?.participant_id,requestId:crypto.randomUUID()},res=>{if(res?.ok){setAuction(res.state);setNotice(`Bid accepted: ${money(res.bid.amount_paise)}`);}else setNotice(`Bid rejected: ${explain(res?.error)}`);});};
-  const sendChat=e=>{e?.preventDefault();const message=chatText.trim();if(!message||!socketRef.current)return;socketRef.current.emit('chat:send',{message},res=>{if(res?.ok)setChatText('');else setNotice(explain(res?.error));});};
-  const hostAction=(action,payload={})=>socketRef.current?.emit('auction:host-action',{action,payload},res=>{if(!res?.ok)setNotice(explain(res?.error));else{setAuction(res.state);setNotice('Auction state updated.');if(action==='sell'||action==='unsold'){window.setTimeout(()=>socketRef.current?.emit('auction:host-action',{action:'next-player'},next=>{if(!next?.ok)setNotice(explain(next?.error));else{setAuction(next.state);setNotice(next.state.currentPlayer?`Next player: ${next.state.currentPlayer.name}`:'All players in the auction pool have been processed.');}}),1800);}}});
-  const choosePlayer=player=>hostAction('set-player',{playerId:Number(player.id)});
-  const startAuction=()=>{
-    if(!isHost)return setNotice('Only the host can start the auction.');
-    const startNow=()=>socketRef.current?.emit('auction:host-action',{action:'start'},res=>{if(!res?.ok){setNotice(explain(res?.error));return;}setAuction(res.state);setView('auction');setNotice('Auction started.');});
-    if(auction.currentPlayerId){startNow();return;}
-    if(!players.length){setNotice('Players are still loading. Please try again.');return;}
-    socketRef.current?.emit('auction:host-action',{action:'set-player',payload:{playerId:Number(players[0].id)}},res=>{if(!res?.ok){setNotice(explain(res?.error));return;}setAuction(res.state);startNow();});
-  };
-  const createVoicePeer=(peerId,initiate=false)=>{
-    if(peersRef.current.has(peerId))return peersRef.current.get(peerId);
-    const socket=socketRef.current;if(!socket||!localStreamRef.current)return null;
-    const pc=new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});
-    localStreamRef.current.getTracks().forEach(track=>pc.addTrack(track,localStreamRef.current));
-    pc.onicecandidate=e=>{if(e.candidate)socket.emit('voice:signal',{targetSocketId:peerId,signal:{candidate:e.candidate}});};
-    pc.ontrack=e=>setRemoteStreams(old=>[...old.filter(x=>x.id!==peerId),{id:peerId,stream:e.streams[0]}]);
-    pc.onconnectionstatechange=()=>{if(['failed','closed','disconnected'].includes(pc.connectionState)){setRemoteStreams(old=>old.filter(x=>x.id!==peerId));}};
-    peersRef.current.set(peerId,pc);
-    if(initiate)pc.createOffer().then(offer=>pc.setLocalDescription(offer)).then(()=>socket.emit('voice:signal',{targetSocketId:peerId,signal:pc.localDescription})).catch(err=>console.error('Voice offer failed',err));
-    return pc;
-  };
-  const toggleVoice=async()=>{
-    if(voiceJoined){peersRef.current.forEach(pc=>pc.close());peersRef.current.clear();setRemoteStreams([]);localStreamRef.current?.getTracks().forEach(t=>t.stop());localStreamRef.current=null;setVoiceJoined(false);setNotice('Voice chat disconnected.');return;}
-    try{if(!navigator.mediaDevices?.getUserMedia)throw new Error('Microphone access requires HTTPS and a supported browser.');localStreamRef.current=await navigator.mediaDevices.getUserMedia({audio:true,video:false});setVoiceJoined(true);socketRef.current?.emit('voice:join');setNotice('Microphone connected. Joining room voice chat…');}catch(e){setNotice(e.message||'Microphone permission was denied.');}
-  };
-  useEffect(()=>{if(['messages','squads','xi','sets','more'].includes(view)&&sectionRef.current)sectionRef.current.scrollIntoView({behavior:'smooth',block:'start'});},[view]);
-  useEffect(()=>()=>{peersRef.current.forEach(pc=>pc.close());localStreamRef.current?.getTracks().forEach(t=>t.stop());},[]);
+      const nextRoom = roomR.data.room;
+      setRoom(nextRoom);
+      setParticipants(roomR.data.participants || []);
+      setAuction(nextRoom.state || { status: nextRoom.status, currentBidPaise: 0 });
+      setBids(bidR.data.data || []);
+      setPurses(purseR.data.data || []);
+      setSquads(squadR.data.data || []);
+      setXi(xiR.data.data || []);
+      setMessages(chatR.data.data || []);
+    } catch (error) {
+      setNotice(`Room data: ${getError(error, "could_not_load_room")}`);
+    }
+  }, []);
 
-  const saveXI=async()=>{
-    try{await api.put(`/api/rooms/${roomCode}/playing-xi`,{participantId:participant?.participantId||participant?.participant_id,teamKey:xiTeam,playerIds:xi.filter(x=>x.team_key===xiTeam).map(x=>Number(x.id))});setNotice('Playing XI saved.');await loadRoomData(roomCode);}
-    catch(e){setNotice(explain(e.response?.data?.error||'playing_xi_save_failed'));}
-  };
-  const toggleXI=playerId=>{
-    const current=xi.filter(x=>x.team_key===xiTeam);
-    if(current.some(x=>Number(x.id)===Number(playerId)))setXi(xi.filter(x=>!(x.team_key===xiTeam&&Number(x.id)===Number(playerId))));
-    else if(current.length<11){const p=squads.find(x=>x.team_key===xiTeam&&Number(x.id)===Number(playerId));if(p)setXi([...xi,{...p,team_key:xiTeam,position:current.length+1}]);}
-    else setNotice('Playing XI can contain up to 11 players.');
-  };
-  const sendVoiceCommand=command=>{
-    const c=command.toLowerCase();
-    if(c.includes('bid'))placeBid();
-    else if(c.includes('squad'))setView('squads');
-    else if(c.includes('playing'))setView('xi');
-    else if(c.includes('purse'))setView('squads'); else if(c.includes('set'))setView('sets');
-    else if(c.includes('auction'))setView('auction');
-    else if(c.includes('mute microphone'))setMuted(true);
-    else if(c.includes('unmute microphone'))setMuted(false);
-  };
-  const toggleSpeech=()=>{
-    const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-    if(!SR)return setNotice('Speech recognition is not supported in this browser.');
-    if(speechListening){setSpeechListening(false);return;}
-    const rec=new SR();rec.lang='en-IN';rec.continuous=false;rec.interimResults=false;
-    rec.onresult=e=>{const phrase=e.results[0][0].transcript;setSpeechText(phrase);sendVoiceCommand(phrase);};
-    rec.onerror=()=>setNotice('Could not recognize that command. Use the manual controls.');
-    rec.onend=()=>setSpeechListening(false);setSpeechListening(true);rec.start();
-  };
-  const teamName=key=>TEAM_LIST.find(t=>t[0]===key)?.[1]||'No team selected';
-  const leaveRoom=()=>{socketRef.current?.disconnect();socketRef.current=null;setRoom(null);setParticipant(null);setView('landing');setRoomCode('');};
+  const playTone = useCallback((frequency = 660) => {
+    if (!soundOn) return;
+    try {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) return;
+      const context = new AudioContextClass();
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      oscillator.frequency.value = frequency;
+      gain.gain.value = 0.05;
+      oscillator.connect(gain);
+      gain.connect(context.destination);
+      oscillator.start();
+      gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.25);
+      oscillator.stop(context.currentTime + 0.25);
+      oscillator.onended = () => context.close();
+    } catch {}
+  }, [soundOn]);
 
-  if(view==='landing') return <main className="landing">
-    <div className="landing-top"><div className="brand"><span className="brand-mark"><Gavel size={21}/></span><span>AUCTION<span className="gold">ROOM</span></span></div><span className="pill"><span className="live-dot"/> REAL-TIME IPL AUCTION</span></div>
-    <section className="hero"><div className="eyebrow"><Radio size={15}/> THE AUCTION STARTS HERE</div><h1>Build your legacy.<br/><span>One bid at a time.</span></h1><p>Create a private auction room, draft your franchise, and compete live with friends.</p>
-      <div className="entry-grid"><article className="entry-card"><div className="card-icon"><Crown/></div><h2>Create a room</h2><p>Host your own IPL player auction.</p><label>Room name</label><input value={roomName} onChange={e=>setRoomName(e.target.value)} maxLength="60"/><label>Your display name</label><input value={displayName} onChange={e=>setDisplayName(e.target.value)} placeholder="e.g. Shaji" maxLength="40"/><button className="primary wide" disabled={busy} onClick={createRoom}>{busy?'Creating…':'Create private room'} <ArrowUpRight size={17}/></button></article>
-      <article className="entry-card"><div className="card-icon"><Users/></div><h2>Join a room</h2><p>Enter a code and claim your franchise.</p><label>Room code</label><input value={roomCode} onChange={e=>setRoomCode(e.target.value.toUpperCase())} placeholder="e.g. A8F2QK" maxLength="8"/><label>Your display name</label><input value={displayName} onChange={e=>setDisplayName(e.target.value)} placeholder="Your name" maxLength="40"/><label>Choose franchise</label><select value={teamKey} onChange={e=>setTeamKey(e.target.value)}>{TEAM_LIST.map(([k,n])=><option value={k} key={k}>{n}</option>)}</select><button className="secondary wide" disabled={busy} onClick={joinRoom}>Join auction room <ArrowUpRight size={17}/></button></article></div>
-    </section><footer className="landing-footer">MADE FOR THE LOVE OF THE GAME <span>•</span> PRIVATE ROOMS • LIVE BIDDING</footer>{notice&&<div className="toast">{notice}<button onClick={()=>setNotice('')}><X size={14}/></button></div>}
-  </main>;
+  const enterRoom = useCallback(async (code, p) => {
+    socketRef.current?.disconnect();
+    setParticipant(p);
+    setRoomCode(code);
+    setPage("lobby");
+    setTab("messages");
 
-  const nav=[['auction','Auction',Gavel],['messages','Live Messages',MessageCircle],['squads','Squads',Users],['xi','Playing XI',ListOrdered],['sets','Sets',ListOrdered],['more','More',Settings]];
-  const teamPurse=purses.find(p=>p.team_key===myTeam);
-  return <div className="app-shell">
-    <header className="topbar"><div className="brand"><span className="brand-mark"><Gavel size={19}/></span><span>AUCTION<span className="gold">ROOM</span></span></div><div className="room-meta"><span className="pill"><span className="live-dot"/>{auction.status==='active'?'LIVE':String(auction.status||'WAITING').toUpperCase()}</span><span className="room-label">{room?.name||'IPL Auction'}</span><button className="code-chip" onClick={()=>{navigator.clipboard?.writeText(roomCode);setNotice('Room code copied.')}}><Clipboard size={13}/>{roomCode}</button></div><div className="top-actions"><span className="connection"><span className="green-dot"/> Connected</span><button className="icon-btn" title="Leave room" onClick={leaveRoom}><X size={17}/></button></div></header>
-    <div className="workspace">
-      {view==='lobby' ? <section className="panel team-lobby-panel lobby-page"><div className="content-head"><div><div className="eyebrow">FRANCHISE DRAFT</div><h2>Teams & owners</h2><p className="muted">Choose one available franchise. Everyone can see team ownership.</p></div><span className="subtle">{participants.filter(p=>p.team_key).length}/10 CLAIMED</span></div><div className="team-lobby-grid">{TEAM_LIST.map(([key,name])=>{const owner=participants.find(p=>p.team_key===key);const mine=key===myTeam;return <article className={`team-lobby-card ${owner?'claimed':''} ${mine?'my-team':''}`} key={key} style={{'--team-color':TEAM_COLORS[key]}}><div className="team-logo-badge">{key.toUpperCase()}</div><div className="team-lobby-name"><b>{name}</b><small>{owner?`${owner.display_name}${mine?' · Your team':''}`:'Available'}</small></div>{owner?<Check size={16}/>:<span className="available-dot"/>}</article>})}</div><div className="lobby-actions"><span className="muted">{isHost?'Start when everyone is ready.':'Waiting for the host to start the auction.'}</span>{isHost&&<button className="primary" onClick={startAuction}><Play size={15}/> Start Auction</button>}</div></section> : <><section className="auction-stage">
-        <div className="section-heading"><div><div className="eyebrow">LOT {auction.currentPlayerId||'—'} <span>•</span> IPL PLAYER AUCTION</div><h1>Live auction <span className="live-badge"><span className="live-dot"/> LIVE</span></h1></div><div className="stage-stats"><div><strong>{auction.soldCount||0}</strong><small>SOLD</small></div><div><strong>{auction.unsoldCount||0}</strong><small>UNSOLD</small></div><div><strong>{players.length}</strong><small>LOADED</small></div></div></div>
-        {isHost&&<details className="player-picker" style={{marginBottom:16,border:'1px solid #2b303b',borderRadius:12,background:'#10131a',padding:12}}>
-          <summary style={{cursor:'pointer',fontWeight:700,color:'#f0bd55'}}>Select current player · {players.length} loaded</summary>
-          <div style={{display:'flex',gap:8,marginTop:12,flexWrap:'wrap'}}>
-            <input aria-label="Search players" value={playerQuery} onChange={e=>setPlayerQuery(e.target.value)} placeholder="Search player name…" style={{flex:'1 1 220px',minWidth:0,padding:'10px 12px',borderRadius:8,border:'1px solid #343b49',background:'#0b0e13',color:'#fff'}} />
-            <button className="secondary" onClick={()=>loadPlayers(playerQuery)}>Search</button>
+    const socket = io(SOCKET_URL, { transports: ["websocket", "polling"] });
+    socketRef.current = socket;
+
+    socket.on("connect", () => {
+      socket.emit("room:join-live", {
+        code,
+        participantId: p.participantId || p.participant_id
+      }, response => {
+        if (response?.ok) {
+          setNotice("Connected to live auction");
+          if (response.room?.state) setAuction(response.room.state);
+        } else {
+          setNotice(getError({ message: response?.error }, "Room connection failed"));
+        }
+      });
+    });
+
+    socket.on("auction:state", state => setAuction(state));
+    socket.on("bid:accepted", event => {
+      setBids(old => [event.bid, ...old].slice(0, 100));
+      setNotice(`${event.participantName || "A participant"} placed a bid`);
+      playTone(760);
+    });
+    socket.on("chat:message", message => setMessages(old => [...old, message]));
+    socket.on("presence:changed", () => loadRoomData(code));
+
+    socket.on("sale:celebration", event => {
+      setSale(event);
+      playTone(880);
+      clearTimeout(saleTimerRef.current);
+      saleTimerRef.current = setTimeout(() => setSale(null), 4500);
+    });
+
+    socket.on("connect_error", () => setNotice("Connection issue. Retrying…"));
+
+    await Promise.all([loadRoomData(code), loadPlayers()]);
+  }, [loadPlayers, loadRoomData, playTone]);
+
+  useEffect(() => () => {
+    socketRef.current?.disconnect();
+    clearTimeout(saleTimerRef.current);
+    Object.values(peersRef.current).forEach(peer => peer.close());
+    localStreamRef.current?.getTracks().forEach(track => track.stop());
+  }, []);
+
+  useEffect(() => {
+    if (!auction.deadline) {
+      setRemaining(0);
+      return;
+    }
+    const tick = () => setRemaining(Math.max(0,
+      Math.ceil((new Date(auction.deadline).getTime() - Date.now()) / 1000)
+    ));
+    tick();
+    const timer = setInterval(tick, 250);
+    return () => clearInterval(timer);
+  }, [auction.deadline, auction.auctionVersion]);
+
+  useEffect(() => {
+    if (page !== "home" && roomCode) {
+      const timer = setInterval(() => loadRoomData(roomCode), 12000);
+      return () => clearInterval(timer);
+    }
+  }, [page, roomCode, loadRoomData]);
+
+  const createRoom = async event => {
+    event?.preventDefault();
+    if (!displayName.trim()) return setNotice("Enter your display name first.");
+    setBusy(true);
+    try {
+      const id = makeId();
+      const response = await api.post("/api/rooms", {
+        name: roomName.trim(),
+        displayName: displayName.trim(),
+        participantId: id
+      });
+      const p = {
+        participantId: response.data.participant.participantId || id,
+        displayName: displayName.trim(),
+        isHost: true,
+        teamKey: null
+      };
+      await enterRoom(response.data.room.code, p);
+    } catch (error) {
+      setNotice(`Create room failed: ${getError(error, "room_create_failed")}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const joinRoom = async event => {
+    event?.preventDefault();
+    if (!displayName.trim() || !roomCodeInput.trim()) {
+      return setNotice("Enter your name and room code.");
+    }
+    setBusy(true);
+    try {
+      const id = makeId();
+      const response = await api.post(
+        `/api/rooms/${roomCodeInput.trim().toUpperCase()}/join`,
+        { participantId: id, displayName: displayName.trim(), teamKey }
+      );
+      const raw = response.data.participant || {};
+      await enterRoom(roomCodeInput.trim().toUpperCase(), {
+        ...raw,
+        participantId: raw.participant_id || raw.participantId || id,
+        displayName: raw.display_name || displayName.trim(),
+        teamKey: raw.team_key || teamKey
+      });
+    } catch (error) {
+      setNotice(`Join room failed: ${getError(error, "room_join_failed")}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const chooseTeam = async key => {
+    if (!participantId) return;
+    const owner = teamOwners[key];
+    if (owner && owner !== participant?.displayName) {
+      setNotice(`${teamInfo(key)?.name} is already taken.`);
+      return;
+    }
+    try {
+      const response = await api.post(`/api/rooms/${roomCode}/join`, {
+        participantId,
+        displayName: participant?.displayName || participant?.display_name || displayName,
+        teamKey: key
+      });
+      const p = response.data.participant || {};
+      setParticipant(old => ({
+        ...old,
+        ...p,
+        participantId: p.participant_id || p.participantId || participantId,
+        teamKey: p.team_key || p.teamKey || key,
+        displayName: p.display_name || old?.displayName || displayName
+      }));
+      setTeamKey(key);
+      await loadRoomData(roomCode);
+      setNotice(`Selected ${teamInfo(key)?.name}`);
+    } catch (error) {
+      setNotice(`Team selection failed: ${getError(error)}`);
+    }
+  };
+
+  const hostAction = (action, payload = {}) => {
+    if (!socketRef.current) return setNotice("Connect to the room first.");
+    socketRef.current.emit("auction:host-action", { action, payload }, response => {
+      if (!response?.ok) return setNotice(response?.error || "Host action failed");
+      setAuction(response.state);
+      setNotice(action === "start" ? "Auction started" : "Auction updated");
+    });
+  };
+
+  const placeBid = () => {
+    if (!socketRef.current) return setNotice("Connect to a room before bidding.");
+    socketRef.current.emit("bid:place", {
+      code: roomCode,
+      participantId,
+      requestId: crypto.randomUUID()
+    }, response => {
+      if (!response?.ok) return setNotice(response?.error || "Bid rejected");
+      setAuction(response.state);
+      setNotice(`Bid accepted: ${money(response.bid.amount_paise)}`);
+    });
+  };
+
+  const sendChat = event => {
+    event?.preventDefault();
+    const message = chatText.trim();
+    if (!message || !socketRef.current) return;
+    socketRef.current.emit("chat:send", { message }, response => {
+      if (response?.ok) setChatText("");
+      else setNotice(response?.error || "Message failed");
+    });
+  };
+
+  const leaveRoom = () => {
+    socketRef.current?.disconnect();
+    socketRef.current = null;
+    localStreamRef.current?.getTracks().forEach(track => track.stop());
+    setRoom(null);
+    setParticipant(null);
+    setRoomCode("");
+    setPage("home");
+  };
+
+  const startVoice = async () => {
+    try {
+      if (micOn) {
+        localStreamRef.current?.getTracks().forEach(track => track.stop());
+        localStreamRef.current = null;
+        setMicOn(false);
+        return;
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      localStreamRef.current = stream;
+      setMicOn(true);
+      setNotice("Microphone enabled. Full peer audio requires WebRTC signaling for all room participants.");
+    } catch {
+      setNotice("Microphone access denied or unavailable.");
+    }
+  };
+
+  const saveXI = async () => {
+    try {
+      await api.put(`/api/rooms/${roomCode}/playing-xi`, {
+        participantId,
+        teamKey: xiTeam,
+        playerIds: selectedXI.map(p => Number(p.id))
+      });
+      setNotice("Playing XI saved");
+      await loadRoomData(roomCode);
+    } catch (error) {
+      setNotice(`Playing XI save failed: ${getError(error)}`);
+    }
+  };
+
+  const toggleXI = playerId => {
+    const already = selectedXI.some(p => Number(p.id) === Number(playerId));
+    if (already) {
+      setXi(old => old.filter(p => !(p.team_key === xiTeam && Number(p.id) === Number(playerId))));
+    } else if (selectedXI.length < 11) {
+      const player = mySquad.find(p => Number(p.id) === Number(playerId));
+      if (player) setXi(old => [...old, { ...player, team_key: xiTeam, position: selectedXI.length + 1 }]);
+    } else {
+      setNotice("Playing XI is limited to 11 players.");
+    }
+  };
+
+  const currentSetStatus = useMemo(() => {
+    const state = auction;
+    const doneIds = new Set([
+      ...(state.soldPlayerIds || []),
+      ...(state.unsoldPlayerIds || [])
+    ].map(Number));
+    const groups = new Map();
+
+    players.forEach(player => {
+      const setNumber = Number(player.source_data?.set_number || player.set_number || 0);
+      const setName = player.source_data?.set_name || player.set_name || `Set ${setNumber || "Unassigned"}`;
+      if (!groups.has(setNumber)) groups.set(setNumber, { number: setNumber, name: setName, players: [] });
+      groups.get(setNumber).players.push({
+        ...player,
+        sold: doneIds.has(Number(player.id))
+      });
+    });
+
+    return [...groups.values()].map(group => {
+      const completed = group.players.length > 0 && group.players.every(p => p.sold);
+      const upcoming = group.players.every(p => !p.sold) &&
+        group.number !== Number(state.currentSetNumber);
+      return {
+        ...group,
+        status: completed ? "completed" : upcoming ? "upcoming" : "current"
+      };
+    }).filter(group => setsFilter === "all" || group.status === setsFilter);
+  }, [players, auction, setsFilter]);
+
+  if (page === "home") {
+    return (
+      <main className="home-page">
+        <header className="home-brand">
+          <span className="brand-mark"><Gavel size={24} /></span>
+          <span>AUCTION<span className="gold">ROOM</span></span>
+        </header>
+
+        <section className="home-hero">
+          <p className="eyebrow"><Radio size={15} /> MULTIPLAYER IPL AUCTION</p>
+          <h1>Build your franchise.<br /><span>Win the auction.</span></h1>
+          <p className="muted">Create a private room, select your team and bid live with friends.</p>
+
+          <div className="home-grid">
+            <form className="home-card" onSubmit={createRoom}>
+              <Crown size={24} />
+              <h2>Create room</h2>
+              <label>Room name</label>
+              <input value={roomName} onChange={e => setRoomName(e.target.value)} maxLength={60} />
+              <label>Your display name</label>
+              <input value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="Enter your name" maxLength={40} />
+              <button className="primary-button" disabled={busy}>
+                {busy ? "Creating..." : "Create Room"} <ArrowRight size={17} />
+              </button>
+            </form>
+
+            <form className="home-card" onSubmit={joinRoom}>
+              <Users size={24} />
+              <h2>Join room</h2>
+              <label>Room code</label>
+              <input value={roomCodeInput} onChange={e => setRoomCodeInput(e.target.value.toUpperCase())} placeholder="Enter room code" maxLength={8} />
+              <label>Your display name</label>
+              <input value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="Enter your name" maxLength={40} />
+              <label>Preferred franchise</label>
+              <select value={teamKey} onChange={e => setTeamKey(e.target.value)}>
+                {TEAMS.map(team => <option key={team.key} value={team.key}>{team.name}</option>)}
+              </select>
+              <button className="secondary-button" disabled={busy}>
+                {busy ? "Joining..." : "Join Room"} <ArrowRight size={17} />
+              </button>
+            </form>
           </div>
-          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))',gap:8,marginTop:12,maxHeight:260,overflowY:'auto'}}>
-            {players.map(player=><button key={player.id} type="button" onClick={()=>choosePlayer(player)} style={{textAlign:'left',padding:10,border:'1px solid #2b303b',borderRadius:8,background:Number(auction.currentPlayerId)===Number(player.id)?'#352b17':'#151922',color:'#f5f6f8',cursor:'pointer'}}>
-              <strong style={{display:'block'}}>{player.name}</strong>
-              <span style={{display:'block',fontSize:12,color:'#aab2c0',marginTop:4}}>{player.role||'Role unavailable'} · Base {player.base_price_paise?money(player.base_price_paise):'—'} · ID {player.id}</span>
-            </button>)}
-            {!players.length&&<p style={{color:'#aab2c0'}}>No players found. Try another search.</p>}
+        </section>
+        {notice && <Notice message={notice} onClose={() => setNotice("")} />}
+      </main>
+    );
+  }
+
+  if (page === "lobby") {
+    return (
+      <main className="lobby-page">
+        <header className="lobby-header">
+          <div>
+            <p className="eyebrow">FRANCHISE DRAFT</p>
+            <h1>Teams & owners</h1>
+            <p className="muted">Room code: <b>{roomCode}</b> · Share this code with friends.</p>
           </div>
-          <p style={{fontSize:12,color:'#aab2c0',marginBottom:0}}>Choose a player here, then click Start in Host Controls to begin bidding.</p>
-        </details>}
-        <div className="auction-grid">
-          <article className="player-card">
-            <div className="player-art">{currentPlayer?.photo_url?<img src={currentPlayer.photo_url} alt={currentPlayer.name}/>:<div className="player-placeholder"><span>IPL</span><Gavel size={46}/><small>PLAYER PROFILE</small></div>}<div className="player-label">CURRENT PLAYER</div></div>
-            <div className="player-info"><div className="player-topline"><span className="role-tag">{currentPlayer?.role||'Awaiting player'}</span><span className="nation-tag">{currentPlayer?.nationality||'—'}</span></div><h2>{currentPlayer?.name||'Waiting for the host'}</h2><p>{currentPlayer?.batting_style||'Batting style unavailable'}{currentPlayer?.bowling_style?` · ${currentPlayer.bowling_style}`:''}</p><div className="player-metrics"><div><small>BASE PRICE</small><strong>{currentPlayer?.base_price_paise?money(currentPlayer.base_price_paise):'—'}</strong></div><div><small>PLAYER ID</small><strong>{currentPlayer?.id||'—'}</strong></div></div></div>
+          <button className="icon-button" onClick={leaveRoom} aria-label="Leave room"><X /></button>
+        </header>
+
+        <div className="lobby-grid">
+          {TEAMS.map(team => {
+            const owner = teamOwners[team.key];
+            const isMine = myTeam === team.key;
+            return (
+              <button
+                key={team.key}
+                className={`team-card ${owner ? "claimed" : ""} ${isMine ? "selected" : ""}`}
+                style={{ "--team-color": team.color }}
+                onClick={() => chooseTeam(team.key)}
+                disabled={Boolean(owner && !isMine)}
+              >
+                <span className="team-logo">{team.short}</span>
+                <span className="team-copy">
+                  <b>{team.name}</b>
+                  <small>{owner ? `Owned by ${owner}` : "Available — click to select"}</small>
+                </span>
+                {isMine && <Check className="team-check" />}
+              </button>
+            );
+          })}
+        </div>
+
+        <footer className="lobby-footer">
+          <span className="muted">{Object.keys(teamOwners).length}/10 franchises claimed</span>
+          {isHost ? (
+            <button className="primary-button" onClick={() => hostAction("start")}>
+              <Play size={17} /> Start Auction
+            </button>
+          ) : (
+            <span className="muted">Waiting for the host to start…</span>
+          )}
+        </footer>
+
+        {notice && <Notice message={notice} onClose={() => setNotice("")} />}
+      </main>
+    );
+  }
+
+  return (
+    <main className="auction-app">
+      <header className="auction-topbar">
+        <div className="home-brand">
+          <span className="brand-mark"><Gavel size={19} /></span>
+          <span>AUCTION<span className="gold">ROOM</span></span>
+        </div>
+        <div className="room-info">
+          <span className={`status-pill ${auction.status === "active" ? "active" : ""}`}>
+            <i /> {String(auction.status || "waiting").toUpperCase()}
+          </span>
+          <b>{room?.name || "IPL Auction"}</b>
+          <button className="code-button" onClick={() => {
+            navigator.clipboard?.writeText(roomCode);
+            setNotice("Room code copied");
+          }}><Clipboard size={14} /> {roomCode}</button>
+        </div>
+        <button className="icon-button" onClick={leaveRoom} aria-label="Leave room"><X /></button>
+      </header>
+
+      <section className="live-auction-panel">
+        <div className="live-panel-title">
+          <div>
+            <p className="eyebrow">LOT {auction.currentPlayerId || "—"} · IPL PLAYER AUCTION</p>
+            <h1>Live Auction <span className="live-badge">LIVE</span></h1>
+          </div>
+          <div className="auction-counts">
+            <span><b>{auction.soldCount || 0}</b><small>SOLD</small></span>
+            <span><b>{auction.unsoldCount || 0}</b><small>UNSOLD</small></span>
+            <span><b>{players.length}</b><small>PLAYERS</small></span>
+          </div>
+        </div>
+
+        <div className="live-player-bidding">
+          <article className="current-player-card">
+            <div className="player-placeholder"><Gavel size={34} /><small>CURRENT PLAYER</small></div>
+            <div className="player-description">
+              <span className="role-chip">{currentPlayer?.role || "Waiting for player"}</span>
+              <h2>{currentPlayer?.name || "Waiting for the host"}</h2>
+              <p>{currentPlayer?.nationality || "Player details will appear here"}</p>
+              <div className="base-price"><small>BASE PRICE</small><b>{currentPlayer?.base_price_paise ? money(currentPlayer.base_price_paise) : "—"}</b></div>
+            </div>
           </article>
-          <article className="bid-card"><div className="bid-card-head"><span><Activity size={15}/> LIVE BIDDING</span><span className="round-tag">ROUND 01</span></div><div className="countdown"><div className={`timer ${remaining<=5?'urgent':''}`}>{String(Math.floor(remaining/60)).padStart(2,'0')}:{String(remaining%60).padStart(2,'0')}</div><span>TIME LEFT</span></div><div className="current-bid"><small>CURRENT BID</small><strong>{money(auction.currentBidPaise)}</strong><div className="highest"><span className="avatar">{(auction.highestBidder?.teamName||'?').slice(0,1)}</span><div><small>HIGHEST BIDDER</small><b>{auction.highestBidder?.teamName||'No bids yet'}</b></div><span className="highest-amount">{auction.highestBidder?money(auction.currentBidPaise):'—'}</span></div></div><div className="next-bid"><span>NEXT VALID BID</span><strong>{money(nextBid)}</strong></div><button className="primary bid-button" onClick={placeBid} disabled={auction.status!=='active'||!currentPlayer||remaining===0||myTeam===auction.highestBidder?.teamKey}><Gavel size={18}/> PLACE BID <span>{money(nextBid)}</span></button><div className="your-purse"><span><Wallet size={15}/> YOUR TEAM PURSE</span><strong>{teamPurse?money(teamPurse.remainingPursePaise):'₹120.00 Cr'}</strong></div>
-            {isHost&&<div className="host-controls"><div className="host-label"><ShieldCheck size={14}/> HOST CONTROLS</div><div className="host-row"><button onClick={()=>hostAction(auction.status==='active'?'pause':'start')}><Play size={14}/>{auction.status==='active'?'Pause':'Start'}</button><button onClick={()=>hostAction('resume')}><Activity size={14}/>Resume</button><button onClick={()=>hostAction('sell')}><Check size={14}/>Sold</button><button onClick={()=>hostAction('unsold')}>Unsold</button><button onClick={()=>hostAction('end')}><X size={14}/>End</button></div></div>}
+
+          <article className="bidding-card">
+            <div className="bid-clock">
+              <span>TIME LEFT</span>
+              <strong className={remaining <= 5 ? "urgent" : ""}>
+                {String(Math.floor(remaining / 60)).padStart(2, "0")}:{String(remaining % 60).padStart(2, "0")}
+              </strong>
+            </div>
+            <div className="bid-values">
+              <div><small>CURRENT BID</small><b>{money(auction.currentBidPaise)}</b></div>
+              <div><small>LEADING BIDDER</small><b>{auction.highestBidder?.teamName || "No bids yet"}</b></div>
+            </div>
+            <p className="next-bid-label">Next valid bid <b>{money(nextBid)}</b></p>
+            <button
+              className="bid-now-button"
+              disabled={auction.status !== "active" || !currentPlayer || remaining <= 0 || myTeam === auction.highestBidder?.teamKey}
+              onClick={placeBid}
+            >
+              <Gavel size={19} /> BID NOW · {money(nextBid)}
+            </button>
+            <div className="purse-summary"><Wallet size={15} /> Your purse <b>{money(myPurse?.remainingPursePaise ?? 120000000000)}</b></div>
+            {isHost && (
+              <div className="host-actions">
+                <button onClick={() => hostAction(auction.status === "active" ? "pause" : "start")}>
+                  {auction.status === "active" ? <Pause size={14} /> : <Play size={14} />}
+                  {auction.status === "active" ? "Pause" : "Start"}
+                </button>
+                <button onClick={() => hostAction("sell")}><Check size={14} /> Sold</button>
+                <button onClick={() => hostAction("unsold")}>Unsold</button>
+                <button onClick={() => hostAction("resume")}>Resume</button>
+              </div>
+            )}
           </article>
         </div>
-      </section></> }
-      {view!=='lobby'&&<>{view==='messages'&&<section className="activity-grid"><article className="panel chat-panel combined-feed"><div className="panel-title"><div><MessageCircle size={17}/><h3>Live Messages</h3><span className="count">{messages.length+bids.length}</span></div><div className="feed-tools"><button className="secondary sound-toggle" onClick={()=>setSoundEnabled(v=>!v)}>{soundEnabled?'🔊 Sound on':'🔇 Sound off'}</button><button className="secondary" onClick={toggleVoice}>{voiceJoined?'Leave voice':'Join voice'}</button><button className="secondary" disabled={!voiceJoined} onClick={()=>{setMuted(!muted);localStreamRef.current?.getAudioTracks().forEach(t=>{t.enabled=!muted});}}>{muted?<Mic size={14}/>:<MicOff size={14}/>} {muted?'Unmute':'Mute'}</button></div></div><div className="chat-list" ref={chatRef}>{[...messages].sort((a,b)=>new Date(a.created_at||0)-new Date(b.created_at||0)).slice(-100).map((m,i)=><div className={`chat-message ${m.eventType==='bid'?'bid-timeline-message':''}`} key={m.id||i}><span className="chat-avatar" style={m.team_key?{background:TEAM_COLORS[m.team_key]||'#333',color:'#111'}:{}}>{(m.display_name||'P').slice(0,1).toUpperCase()}</span><div className="chat-body"><div className="chat-author"><b>{m.display_name||'Participant'}</b><span>{m.team_key?teamName(m.team_key):'Host'}</span><time>{m.created_at?new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}):'now'}</time></div><p>{m.eventType==='bid'?'🔨 ':''}{m.message}</p></div></div>)}{!messages.length&&<div className="empty-state">Chat messages and live bids will appear here.</div>}</div><form className="chat-compose" onSubmit={sendChat}><input value={chatText} onChange={e=>setChatText(e.target.value)} placeholder="Message the room…" maxLength="500"/><button className="send-btn" type="submit"><ArrowUpRight size={17}/></button></form><div className="voice-status">{voiceJoined?'🎙 Voice connected':'Voice chat off'} · {remoteStreams.length} connected audio peer(s)</div>{remoteStreams.map(stream=><audio key={stream.id} autoPlay ref={el=>{if(el&&el.srcObject!==stream.stream)el.srcObject=stream.stream;}} />)}</article></section>}
-      <section className="section-content" aria-live="polite" ref={sectionRef}>
-        {view==='squads'&&<div className="panel content-panel"><div className="content-head"><div><div className="eyebrow">TEAM MANAGEMENT</div><h2>Franchise squads</h2></div><span className="subtle">{squads.length} PURCHASED PLAYERS</span></div><div className="team-grid">{TEAM_LIST.map(([key,name])=>{const list=squads.filter(p=>p.team_key===key);const purse=purses.find(p=>p.team_key===key);return <article className="team-card" key={key}><div className="team-mark" style={{color:TEAM_COLORS[key],borderColor:`${TEAM_COLORS[key]}66`,boxShadow:`inset 0 0 18px ${TEAM_COLORS[key]}18`}}>{key.toUpperCase()}</div><h3>{name}</h3><div className="team-card-stats"><span>{list.length} players</span><b>{money(purse?.remainingPursePaise??120000000000)} left</b></div><div className="mini-roster">{list.slice(0,5).map(p=><span key={p.id}>{p.name}</span>)}{!list.length&&<span className="muted">No players purchased yet</span>}{list.length>5&&<span className="muted">+{list.length-5} more</span>}</div></article>})}</div></div>}
-        {view==='xi'&&<div className="panel content-panel"><div className="content-head"><div><div className="eyebrow">LINEUP BUILDER</div><h2>Playing XI</h2></div><select value={xiTeam} onChange={e=>setXiTeam(e.target.value)}>{TEAM_LIST.map(([k,n])=><option value={k} key={k}>{n}</option>)}</select></div><p className="muted">Select up to 11 players from the chosen franchise's purchased squad. Changes are saved to the server.</p><div className="xi-progress"><span>{xi.filter(x=>x.team_key===xiTeam).length}/11 selected</span><div><i style={{width:`${xi.filter(x=>x.team_key===xiTeam).length/11*100}%`}}/></div></div><div className="xi-list">{squads.filter(p=>p.team_key===xiTeam).map(p=><label className="xi-player" key={p.id}><input type="checkbox" checked={xi.some(x=>x.team_key===xiTeam&&Number(x.id)===Number(p.id))} onChange={()=>toggleXI(p.id)}/><span><b>{p.name}</b><small>{p.role||'Role N/A'}</small></span><strong>{money(p.purchase_price_paise)}</strong></label>)}{!squads.some(p=>p.team_key===xiTeam)&&<div className="empty-state">This team has no purchased players yet.</div>}</div><button className="primary" onClick={saveXI} disabled={!(myTeam===xiTeam||isHost)}>Save Playing XI</button></div>}
-        {view==='sets'&&<div className="panel content-panel"><div className="content-head"><div><div className="eyebrow">RANDOMIZED AUCTION ORDER</div><h2>Auction sets</h2></div><span className="subtle">{auction.auctionSetOrder?.length||new Set(players.map(p=>p.source_data?.set_number||p.source_data?.setNumber||'Unassigned')).size} SETS</span></div><div className="set-tabs"><span>Completed: {(auction.completedPlayerIds||[]).length}</span><span>Current: {currentPlayer?.source_data?.set_number||currentPlayer?.source_data?.setNumber||'—'}</span><span>Unsold: {auction.unsoldCount||0}</span></div><div className="sets-grid">{(auction.auctionSetOrder||[...new Set(players.map(p=>String(p.source_data?.set_number??p.source_data?.setNumber??'Unassigned')))]).map((setKey,index)=>{const setPlayers=players.filter(p=>String(p.source_data?.set_number??p.source_data?.setNumber??'Unassigned')===String(setKey));const completed=new Set((auction.completedPlayerIds||[]).map(Number));const done=setPlayers.length>0&&setPlayers.every(p=>completed.has(Number(p.id)));const current=setPlayers.some(p=>Number(p.id)===Number(auction.currentPlayerId));const unsold=setPlayers.filter(p=>(auction.unsoldPlayerIds||[]).map(Number).includes(Number(p.id)));return <article className="set-card" key={String(setKey)}><div className="set-card-head"><b>Set {setKey}</b><span className={`set-status ${done?'complete':current?'current':'upcoming'}`}>{done?'Completed':current?'In progress':'Upcoming'}</span></div><p>{setPlayers.length} players · {unsold.length} unsold</p><details><summary>View players</summary>{setPlayers.map(player=><div className="set-player-row" key={player.id}><span>{player.name}</span><span>{completed.has(Number(player.id))?(unsold.some(p=>Number(p.id)===Number(player.id))?'Unsold':'Processed'):'Upcoming'}</span></div>)}</details></article>})}</div></div>}
-        {view==='more'&&<div className="panel content-panel"><div className="eyebrow">ROOM CONTROL</div><h2>Room & voice settings</h2><div className="more-grid"><div className="setting-card"><h3><Users size={17}/> Participants</h3>{participants.map(p=><p key={p.participant_id}><span className={p.connected?'green-dot':'gray-dot'}/>{p.display_name} · {p.team_key?teamName(p.team_key):'Host'} {p.is_host?'(Host)':''}</p>)}</div><div className="setting-card"><h3><Headphones size={17}/> Voice chat</h3><p>Live room audio uses your browser microphone. Allow microphone access when prompted. Use HTTPS for deployed rooms.</p><button className="secondary" onClick={toggleVoice}>{voiceJoined?'Leave voice chat':'Join voice chat'}</button><button className="secondary" disabled={!voiceJoined} onClick={()=>{setMuted(!muted);localStreamRef.current?.getAudioTracks().forEach(t=>{t.enabled=muted;});}}>{muted?<Mic size={15}/>:<MicOff size={15}/>} {muted?'Unmute microphone':'Mute microphone'}</button><p className="muted">Connected audio peers: {remoteStreams.length}</p>{remoteStreams.map(stream=><audio key={stream.id} autoPlay ref={el=>{if(el&&el.srcObject!==stream.stream)el.srcObject=stream.stream;}} />)}</div><div className="setting-card"><h3><Mic size={17}/> Voice commands</h3><p>Say “Bid”, “Squads”, “Playing XI”, “Purses”, or “Auction”. Commands use the same app actions as manual controls.</p><button className={speechListening?'danger':'secondary'} onClick={toggleSpeech}>{speechListening?'Listening…':'Enable speech commands'}</button>{speechText&&<p className="muted">Recognized: “{speechText}”</p>}</div><div className="setting-card"><h3><ShieldCheck size={17}/> Franchise ownership</h3>{TEAM_LIST.map(([key,name])=>{const owner=participants.find(p=>p.team_key===key);return <p key={key}><span className="team-mark" style={{display:'inline-grid',width:28,height:28,marginRight:8,verticalAlign:'middle',color:TEAM_COLORS[key],borderColor:`${TEAM_COLORS[key]}66`}}>{key.toUpperCase()}</span><b>{name}</b> · {owner?owner.display_name:'Available'}</p>;})}</div><div className="setting-card"><h3><CircleHelp size={17}/> Room info</h3><p>Share this room code with your friends.</p><button className="secondary" onClick={()=>{navigator.clipboard?.writeText(`${location.origin}?room=${roomCode}`);setNotice('Room link copied.')}}><Clipboard size={15}/> Copy invite link</button><p className="muted">Room code: {roomCode}</p></div></div></div>}
-      </section></>}
+      </section>
+
+      <nav className="bottom-nav">
+        {NAV.map(({ id, label, Icon }) => (
+          <button key={id} className={tab === id ? "active" : ""} onClick={() => setTab(id)}>
+            <Icon size={18} /><span>{label}</span>
+          </button>
+        ))}
+      </nav>
+
+      <section className="lower-content">
+        {tab === "messages" && (
+          <div className="content-panel messages-panel">
+            <header className="panel-header">
+              <div><MessageCircle size={18} /><h2>Live Messages</h2></div>
+              <div className="sound-controls">
+                <button className="icon-button" title={soundOn ? "Mute sounds" : "Enable sounds"} onClick={() => setSoundOn(!soundOn)}>
+                  {soundOn ? <Volume2 size={17} /> : <VolumeX size={17} />}
+                </button>
+                <button className="icon-button" title={micOn ? "Disable microphone" : "Enable microphone"} onClick={startVoice}>
+                  {micOn ? <Mic size={17} /> : <MicOff size={17} />}
+                </button>
+              </div>
+            </header>
+
+            <div className="message-feed">
+              {bids.map((bid, index) => (
+                <div className="feed-item bid-message" key={`bid-${bid.id || index}`}>
+                  <span className="feed-icon"><Gavel size={14} /></span>
+                  <div><b>{bid.display_name || bid.participant_id || "Bidder"}</b>
+                    <p>bid {money(bid.amount_paise)} · {bid.player_name || currentPlayer?.name || "Player"}</p>
+                  </div>
+                  <small>{teamInfo(bid.team_key)?.short || bid.team_key || ""}</small>
+                </div>
+              ))}
+              {messages.map((message, index) => (
+                <div className="feed-item" key={`msg-${message.id || index}`}>
+                  <span className="feed-icon"><MessageCircle size={14} /></span>
+                  <div><b>{message.display_name || "Participant"}</b><p>{message.message}</p></div>
+                  <small>{message.created_at ? new Date(message.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}</small>
+                </div>
+              ))}
+              {!bids.length && !messages.length && <p className="empty-state">Chat and bid activity will appear here.</p>}
+            </div>
+
+            <form className="chat-form" onSubmit={sendChat}>
+              <input value={chatText} onChange={e => setChatText(e.target.value)} placeholder="Message the room…" maxLength={500} />
+              <button className="primary-button" type="submit"><Send size={16} /></button>
+            </form>
+          </div>
+        )}
+
+        {tab === "squads" && (
+          <div className="content-panel">
+            <header className="panel-header"><div><Users size={18} /><h2>Squads & Purse</h2></div></header>
+            <div className="squad-grid">
+              {TEAMS.map(team => {
+                const list = squads.filter(p => p.team_key === team.key);
+                const purse = purses.find(p => p.team_key === team.key);
+                return (
+                  <article className="squad-card" key={team.key} style={{ "--team-color": team.color }}>
+                    <div className="squad-team-heading"><span className="team-logo">{team.short}</span><div><b>{team.name}</b><small>{teamOwners[team.key] || "No owner yet"}</small></div></div>
+                    <div className="purse-stats"><span>Players <b>{list.length}</b></span><span>Spent <b>{money(purse?.spent_paise || 0)}</b></span></div>
+                    <div className="remaining-purse">Remaining balance <b>{money(purse?.remainingPursePaise ?? 120000000000)}</b></div>
+                    {list.length ? list.map(p => <div className="squad-player" key={p.id}><span>{p.name}</span><b>{money(p.purchase_price_paise)}</b></div>) : <p className="muted">No players purchased yet.</p>}
+                  </article>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {tab === "xi" && (
+          <div className="content-panel">
+            <header className="panel-header"><div><ListOrdered size={18} /><h2>Playing XI Creator</h2></div></header>
+            <div className="xi-controls">
+              <label>Franchise
+                <select value={xiTeam} onChange={e => setXiTeam(e.target.value)}>
+                  {TEAMS.map(t => <option key={t.key} value={t.key}>{t.name}</option>)}
+                </select>
+              </label>
+              <span>{selectedXI.length}/11 selected</span>
+            </div>
+            <div className="xi-list">
+              {myTeam === xiTeam || isHost ? squads.filter(p => p.team_key === xiTeam).map(player => (
+                <label className="xi-player" key={player.id}>
+                  <input type="checkbox" checked={selectedXI.some(p => Number(p.id) === Number(player.id))} onChange={() => toggleXI(player.id)} />
+                  <span><b>{player.name}</b><small>{player.role || "Role unavailable"}</small></span>
+                  <strong>{money(player.purchase_price_paise)}</strong>
+                </label>
+              )) : <p className="empty-state">You can edit your own team's Playing XI. The host can manage all teams.</p>}
+              {!squads.some(p => p.team_key === xiTeam) && <p className="empty-state">Buy players for this franchise before creating its XI.</p>}
+            </div>
+            <button className="primary-button" disabled={!(myTeam === xiTeam || isHost)} onClick={saveXI}>Save Playing XI</button>
+          </div>
+        )}
+
+        {tab === "sets" && (
+          <div className="content-panel">
+            <header className="panel-header"><div><Layers size={18} /><h2>Auction Sets</h2></div></header>
+            <div className="sets-filters">
+              {[
+                ["all", "All Sets"], ["current", "Current"], ["upcoming", "Upcoming"], ["completed", "Completed"]
+              ].map(([key, label]) => (
+                <button key={key} className={setsFilter === key ? "active" : ""} onClick={() => setSetsFilter(key)}>{label}</button>
+              ))}
+            </div>
+            <div className="sets-list">
+              {currentSetStatus.map(group => (
+                <article className="set-card" key={`${group.number}-${group.name}`}>
+                  <div><b>{group.name}</b><small>{group.players.length} players</small></div>
+                  <span className={`set-status ${group.status}`}>{group.status}</span>
+                  <details><summary>View players</summary>
+                    {group.players.map(p => <p key={p.id}>{p.name} · {p.role || "Role unavailable"}</p>)}
+                  </details>
+                </article>
+              ))}
+              {!currentSetStatus.length && <p className="empty-state">No sets match this filter. Check that your player API includes set metadata.</p>}
+            </div>
+            <h3>Unsold players</h3>
+            {auction.unsoldPlayers?.length
+              ? auction.unsoldPlayers.map(p => <span className="unsold-chip" key={p.id}>{p.name}</span>)
+              : <p className="muted">Unsold player list depends on backend state.</p>}
+          </div>
+        )}
+      </section>
+
+      {sale && (
+        <div className="sale-overlay">
+          <div className="sale-card" style={{ "--team-color": teamInfo(sale.teamKey)?.color || "#D9A441" }}>
+            <Trophy size={40} />
+            <h2>SOLD!</h2>
+            <h3>{sale.playerName || "Player"}</h3>
+            <strong>{money(sale.amountPaise)}</strong>
+            <p>{teamInfo(sale.teamKey)?.name || sale.teamName || "Winning franchise"}</p>
+          </div>
+        </div>
+      )}
+
+      {notice && <Notice message={notice} onClose={() => setNotice("")} />}
+    </main>
+  );
+}
+
+function Notice({ message, onClose }) {
+  return (
+    <div className="toast" role="status">
+      <span>{message}</span>
+      <button onClick={onClose} aria-label="Dismiss"><X size={15} /></button>
     </div>
-    {view!=='lobby'&&<nav className="bottom-nav">{nav.map(([id,label,Icon])=><button key={id} className={view===id?'active':''} onClick={()=>setView(id)}><Icon size={18}/><span>{label}</span></button>)}</nav>
-    {saleCelebration&&<div className="sale-celebration" style={{'--team-color':TEAM_COLORS[saleCelebration.teamKey]||'#f5c451'}}><div className="celebration-confetti">✦ ✧ ✦ ✧ ✦</div><div className="sale-celebration-card"><div className="sale-trophy">🏆</div><div className="sale-title">SOLD!</div><h2>{saleCelebration.player?.name||'Player'}</h2><strong className="sale-price">{money(saleCelebration.bid)}</strong><div className="sale-winning-team"><span className="team-logo-badge">{(saleCelebration.teamKey||'IPL').toUpperCase()}</span><div><b>{saleCelebration.teamName||teamName(saleCelebration.teamKey)}</b><small>Winning franchise</small></div></div><button className="secondary" onClick={()=>setSaleCelebration(null)}>Continue auction</button></div></div>}
-    {notice&&<div className="toast">{notice}<button onClick={()=>setNotice('')}><X size={14}/></button></div>}
-  </div>;
+  );
 }
