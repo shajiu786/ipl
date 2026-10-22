@@ -58,7 +58,7 @@ export default function App() {
   const [displayName, setDisplayName] = useState("");
   const [roomCodeInput, setRoomCodeInput] = useState("");
   const [roomCode, setRoomCode] = useState("");
-  const [teamKey, setTeamKey] = useState("csk");
+  const [teamKey, setTeamKey] = useState(null);
 
   const [participant, setParticipant] = useState(null);
   const [room, setRoom] = useState(null);
@@ -302,6 +302,7 @@ export default function App() {
     });
     socket.on("chat:message", message => setMessages(old => [...old, message]));
     socket.on("presence:changed", () => loadRoomData(code));
+    socket.on("lobby:participants", list => { if (Array.isArray(list)) setParticipants(list); });
 
     socket.on("sale:celebration", event => {
       setSale(event);
@@ -385,14 +386,14 @@ export default function App() {
       const id = makeId();
       const response = await api.post(
         `/api/rooms/${roomCodeInput.trim().toUpperCase()}/join`,
-        { participantId: id, displayName: displayName.trim(), teamKey }
+        { participantId: id, displayName: displayName.trim(), teamKey: null }
       );
       const raw = response.data.participant || {};
       await enterRoom(roomCodeInput.trim().toUpperCase(), {
         ...raw,
         participantId: raw.participant_id || raw.participantId || id,
         displayName: raw.display_name || displayName.trim(),
-        teamKey: raw.team_key || teamKey
+        teamKey: raw.team_key || raw.teamKey || null
       });
     } catch (error) {
       setNotice(`Join room failed: ${getError(error, "room_join_failed")}`);
@@ -404,30 +405,25 @@ export default function App() {
   const chooseTeam = async key => {
     if (!participantId) return;
     const owner = teamOwners[key];
-    if (owner && owner !== participant?.displayName) {
+    const myName = participant?.displayName || participant?.display_name || displayName;
+    if (owner && owner !== myName) {
       setNotice(`${teamInfo(key)?.name} is already taken.`);
       return;
     }
-    try {
-      const response = await api.post(`/api/rooms/${roomCode}/join`, {
-        participantId,
-        displayName: participant?.displayName || participant?.display_name || displayName,
-        teamKey: key
-      });
-      const p = response.data.participant || {};
-      setParticipant(old => ({
-        ...old,
-        ...p,
-        participantId: p.participant_id || p.participantId || participantId,
-        teamKey: p.team_key || p.teamKey || key,
-        displayName: p.display_name || old?.displayName || displayName
-      }));
+    const socket = socketRef.current;
+    if (!socket?.connected) return setNotice("Reconnecting to room. Please try again.");
+    socket.emit("team:select", { code: roomCode, participantId, teamKey: key }, async response => {
+      if (!response?.ok) {
+        setNotice(response?.error === "team_taken" ? `${teamInfo(key)?.name} is already taken.` : `Team selection failed: ${response?.error || "Please try again"}`);
+        return;
+      }
+      const p = response.participant || {};
+      setParticipant(old => ({ ...old, ...p, participantId, teamKey: key, team_key: key, displayName: p.display_name || p.displayName || old?.displayName || displayName }));
       setTeamKey(key);
+      if (response.participants) setParticipants(response.participants);
       await loadRoomData(roomCode);
       setNotice(`Selected ${teamInfo(key)?.name}`);
-    } catch (error) {
-      setNotice(`Team selection failed: ${getError(error)}`);
-    }
+    });
   };
 
   const hostAction = (action, payload = {}) => {
@@ -580,8 +576,8 @@ export default function App() {
     const groups = new Map();
 
     players.forEach(player => {
-      const setNumber = Number(player.source_data?.set_number || player.set_number || 0);
-      const setName = player.source_data?.set_name || player.set_name || `Set ${setNumber || "Unassigned"}`;
+      const setNumber = player.source_data?.set_number ?? player.source_data?.setNumber ?? player.set_number ?? "Unassigned";
+      const setName = player.source_data?.set_name || player.source_data?.setName || player.set_name || `Set ${setNumber}`;
       if (!groups.has(setNumber)) groups.set(setNumber, { number: setNumber, name: setName, players: [] });
       groups.get(setNumber).players.push({
         ...player,
@@ -715,7 +711,12 @@ export default function App() {
             setNotice("Room code copied");
           }}><Clipboard size={14} /> {roomCode}</button>
         </div>
-        <button className="icon-button" onClick={leaveRoom} aria-label="Leave room"><X /></button>
+        <div className="topbar-actions">
+          {isHost && auction.status !== "ended" && <button className="end-auction-button" onClick={() => {
+            if (window.confirm("End the auction now? Remaining players will stay unsold.")) hostAction("end");
+          }}><X size={14} /> End Auction</button>}
+          <button className="icon-button" onClick={leaveRoom} aria-label="Exit room" title="Exit room"><X /></button>
+        </div>
       </header>
 
       <div className="participant-identity" aria-label="Your auction participant identity">
@@ -883,7 +884,7 @@ export default function App() {
         )}
 
         {tab === "sets" && (
-          <div className="content-panel">
+          <div className="content-panel sets-content-panel">
             <header className="panel-header"><div><Layers size={18} /><h2>Auction Sets</h2></div></header>
             <div className="set-progress-banner">
               <div><small>NOW AUCTIONING</small><strong>{currentPlayer?.source_data?.set_name || currentPlayer?.source_data?.setName || (auction.currentSetNumber ? `Set ${auction.currentSetNumber}` : "Waiting for first set")}</strong></div>
@@ -901,8 +902,8 @@ export default function App() {
                 <article className="set-card" key={`${group.number}-${group.name}`}>
                   <div className="set-card-heading"><b>{group.name}</b><small>{group.players.length} players · {group.soldCount} sold · {group.unsoldCount} unsold · {group.remainingCount} left</small></div>
                   <span className={`set-status ${group.status}`}>{group.status === "completed" ? "✓ Completed" : group.status === "current" ? "● Current set" : "Upcoming"}</span>
-                  <details><summary>View players</summary>
-                    <div className="set-player-list">{group.players.map(p => <p key={p.id} className={p.unsold ? "set-player-unsold" : p.sold ? "set-player-sold" : ""}><span>{p.name} · {p.role || "Role unavailable"}</span><small>{p.unsold ? "UNSOLD" : p.sold ? "DONE" : "UPCOMING"}</small></p>)}</div>
+                  <details open={auction.status === "ended" || group.status === "completed"}><summary>View players · {group.players.length}</summary>
+                    <div className="set-player-list">{group.players.map(p => <p key={p.id} className={p.unsold ? "set-player-unsold" : p.sold ? "set-player-sold" : ""}><span>{p.name}{p.nationality && !/india|indian|local/i.test(p.nationality) ? " ✈️" : ""} · {p.role || "Role unavailable"}</span><small>{p.unsold ? "UNSOLD" : p.sold ? "SOLD" : "UPCOMING"}</small></p>)}</div>
                   </details>
                 </article>
               ))}
@@ -918,7 +919,7 @@ export default function App() {
       </section>
 
       {sale && (
-        <div className="sale-overlay">
+        <div className={`sale-overlay sale-theme-${sale.teamKey || "default"}`}>
           <div className="sale-card" style={{ "--team-color": teamInfo(sale.teamKey)?.color || "#D9A441" }}>
             <Trophy size={40} />
             <h2>SOLD!</h2>
