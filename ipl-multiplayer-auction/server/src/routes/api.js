@@ -40,22 +40,46 @@ export function createApiRouter(pool) {
     finally { client.release(); }
   });
   router.post('/rooms/:code/join', async (req, res) => {
-    const schema = z.object({ participantId:z.string().min(8).max(100), displayName:z.string().trim().min(1).max(40), teamKey:z.string().refine(v => TEAM_NAMES[v]) });
-    const p = schema.safeParse(req.body); if (!p.success) return res.status(400).json({ error:'invalid_request' });
+    // A participant may join the lobby before choosing a team. The UI uses
+    // the separate team:select Socket.IO event to claim a team afterwards.
+    const schema = z.object({
+      participantId: z.string().min(8).max(100),
+      displayName: z.string().trim().min(1).max(40),
+      teamKey: z.string().refine(v => Boolean(TEAM_NAMES[v])).optional()
+    });
+    const p = schema.safeParse(req.body);
+    if (!p.success) return res.status(400).json({ error:'invalid_request', details:p.error.flatten() });
     try {
-      const room = await pool.query('SELECT * FROM auction_rooms WHERE code=$1', [req.params.code.toUpperCase()]);
+      const room = await pool.query('SELECT * FROM auction_rooms WHERE code=$1', [String(req.params.code || '').trim().toUpperCase()]);
       if (!room.rowCount) return res.status(404).json({ error:'room_not_found' });
       const r = room.rows[0];
-      const already = await pool.query('SELECT * FROM room_participants WHERE room_id=$1 AND participant_id=$2', [r.id, p.data.participantId]);
+      const already = await pool.query(
+        'SELECT * FROM room_participants WHERE room_id=$1 AND participant_id=$2',
+        [r.id, p.data.participantId]
+      );
       if (already.rowCount) {
-        await pool.query('UPDATE room_participants SET connected=true, display_name=$3 WHERE room_id=$1 AND participant_id=$2', [r.id,p.data.participantId,p.data.displayName]);
-        return res.json({ room:r, participant:already.rows[0] });
+        const updated = await pool.query(
+          'UPDATE room_participants SET connected=true, display_name=$3 WHERE room_id=$1 AND participant_id=$2 RETURNING *',
+          [r.id, p.data.participantId, p.data.displayName]
+        );
+        return res.json({ room:r, participant:updated.rows[0] });
       }
-      const used = await pool.query('SELECT 1 FROM room_participants WHERE room_id=$1 AND team_key=$2', [r.id,p.data.teamKey]);
-      if (used.rowCount) return res.status(409).json({ error:'team_already_taken' });
-      const joined = await pool.query('INSERT INTO room_participants(room_id,participant_id,display_name,team_key) VALUES($1,$2,$3,$4) RETURNING *', [r.id,p.data.participantId,p.data.displayName,p.data.teamKey]);
+      if (p.data.teamKey) {
+        const used = await pool.query(
+          'SELECT 1 FROM room_participants WHERE room_id=$1 AND team_key=$2',
+          [r.id, p.data.teamKey]
+        );
+        if (used.rowCount) return res.status(409).json({ error:'team_already_taken' });
+      }
+      const joined = await pool.query(
+        'INSERT INTO room_participants(room_id,participant_id,display_name,team_key) VALUES($1,$2,$3,$4) RETURNING *',
+        [r.id, p.data.participantId, p.data.displayName, p.data.teamKey || null]
+      );
       res.json({ room:r, participant:joined.rows[0] });
-    } catch { res.status(500).json({ error:'room_join_failed' }); }
+    } catch (error) {
+      console.error('room_join_failed:', error);
+      res.status(500).json({ error:'room_join_failed' });
+    }
   });
   router.get('/rooms/:code', async (req,res) => {
     try {
