@@ -1791,3 +1791,188 @@ h3 {
     padding: 8px;
   }
 }
+
+/* =====================================================
+   IPL BROADCAST PRO — visual refresh (logic untouched)
+   ===================================================== */
+:root {
+  --bg: #090b10;
+  --panel: #11151e;
+  --panel2: #171c27;
+  --line: #292f3c;
+  --text: #f4f5f8;
+  --muted: #8e98aa;
+  --gold: #e8c16d;
+  --gold-dark: #aa8742;
+  --green: #55d6a0;
+  --red: #ff6671;
+  color-scheme: dark;
+}
+body { background: var(--bg); }
+button, input, select { font: inherit; }
+button { transition: background .16s ease, border-color .16s ease, transform .16s ease; }
+button:active { transform: translateY(1px); }
+.auction-app {
+  background: radial-gradient(ellipse at 50% -18%, #b78d3218 0%, transparent 48%), var(--bg);
+}
+.auction-topbar {
+  flex-basis: 58px;
+  padding: 8px clamp(12px, 2vw, 24px);
+  gap: 12px;
+  background: #0c0f15f5;
+  border-bottom: 1px solid #282d38;
+  backdrop-filter: blur(18px);
+}
+.auction-topbar .home-brand { letter-spacing: .055em; }
+.auction-topbar .brand-mark {
+  border-radius: 12px;
+  background: linear-gradient(145deg, #302719, #17150f);
+  border: 1px solid #6a5630;
+  box-shadow: inset 0 1px #ffffff0c;
+}
+.room-info { gap: 9px; }
+.status-pill, .code-button {
+  border-radius: 9px;
+  background: #151923;
+  border-color: #303645;
+}
+.status-pill { padding: 7px 9px; }
+.code-button { min-height: 34px; }
+.live-auction-panel {
+  flex: 0 0 36%; height: 36%; max-height: 390px; min-height: 245px;
+  gap: 12px; padding: 16px clamp(12px, 2vw, 24px);
+  overflow: auto;
+  background: linear-gradient(180deg, #10141c 0%, #0d1017 100%);
+  border-bottom: 1px solid #292f3b;
+}
+.live-panel-title { gap: 12px; }
+.live-panel-title .eyebrow { color: var(--gold); letter-spacing: .15em; }
+.live-panel-title h1 { font-size: clamp(20px, 2.2vw, 28px); letter-spacing: -.035em; }
+.live-badge { border-radius: 999px; padding: 5px 9px; }
+.auction-counts { gap: clamp(12px, 2.5vw, 30px); }
+.auction-counts b { font-size: clamp(18px, 2vw, 23px); font-variant-numeric: tabular-nums; }
+.auction-counts small { font-size: 9px; letter-spacing: .1em; }
+.live-player-bidding { gap: 10px; }
+.current-player-card, .bidding-card {
+  border-radius: 17px;
+  border-color: #2b3240;
+  background: linear-gradient(145deg, #181d27, #12161f);
+  box-shadow: 0 8px 28px #00000012, inset 0 1px #ffffff04;
+}
+.current-player-card { padding: clamp(12px, 1.6vw, 20px); gap: 14px; }
+.player-placeholder {
+  flex-basis: clamp(62px, 7vw, 88px); width: clamp(62px, 7vw, 88px);
+  height: clamp(74px, 8vw, 100px); border-radius: 13px;
+  color: var(--gold); background: linear-gradient(145deg, #302719, #171a22);
+  border-color: #55452a;
+}
+.player-description h2 { line-height: 1.12; letter-spacing: -.035em; }
+.player-description p { font-size: 12px; }
+.role-chip { border-radius: 999px; padding: 5px 10px; background: #e8c16d12; border-color: #e8c16d35; }
+.base-price b { font-size: 16px; }
+.bidding-card { padding: clamp(12px, 1.6vw, 19px); gap: 10px; }
+.bid-clock { min-height: 48px; padding: 9px 12px; border-radius: 12px; background: #0d1119; border: 1px solid #34313a; }
+.bid-clock span, .bid-values small { font-size: 9px; letter-spacing: .11em; }
+.bid-clock strong { font-size: clamp(23px, 2.6vw, 34px); font-variant-numeric: tabular-nums; }
+.bid-values { gap: 12px; }
+.bid-values b { font-size: clamp(14px, 1.7vw, 20px); }
+.next-bid-label { font-size: 11px; }
+.next-bid-label b { color: var(--gold); }
+.bid-now-button, .bidding-card .primary-button {
+  min-height: 50px; border-radius: 12px; font-weight: 900; letter-spacing: .02em;
+  background: linear-gradient(135deg, #f0d58e, #d7ad50); color: #19150c;
+  border: 1px solid #f2d68c; box-shadow: 0 5px 16px #d4a94720;
+}
+.bid-now-button:hover:not(:disabled), .bidding-card .primary-button:hover:not(:disabled) { background: #f7dfa0; }
+.bid-now-button:disabled, .bidding-card .primary-button:disabled { color: #77715f; background: #302e27; border-color: #3a372e; box-shadow: none; }
+/* Keep secondary navigation compact and consistent. */
+.bottom-nav, .auction-bottom-nav, .section-nav { border-top-color: #282e3a; background: #0c0f15; }
+.nav-item, .bottom-nav button, .auction-bottom-nav button {
+  border-radius: 12px; transition: .16s ease;
+}
+.messages-panel, .content-panel, .xi-content-panel, .sets-content-panel {
+  background: linear-gradient(145deg, #121620, #0f131b);
+  border: 1px solid #2a303c;
+  border-radius: 20px;
+  box-shadow: 0 10px 30px #00000012;
+}
+.messages-panel { padding: clamp(14px, 2vw, 22px); gap: 12px; }
+.messages-panel h2, .content-panel h2 { letter-spacing: -.025em; }
+.message-mode-tabs {
+  padding: 4px; gap: 5px; border: 1px solid #2d3340;
+  background: #0d1118; border-radius: 14px;
+}
+.message-mode-tabs button {
+  border: 1px solid transparent; border-radius: 10px; background: transparent;
+  color: #98a1b2; min-height: 42px;
+}
+.message-mode-tabs button.active, .message-mode-tabs button[aria-selected="true"] {
+  color: var(--gold); background: #e8c16d12; border-color: #8a703a66;
+}
+.message-feed { padding: 2px 0; }
+.feed-item {
+  padding: 12px 10px; gap: 11px; border-bottom: 1px solid #252b36;
+  border-left: 2px solid transparent;
+}
+.feed-item:hover { background: #ffffff03; }
+.bid-message { border-left-color: #d9944c; }
+.feed-icon { border-radius: 11px; background: #e8c16d12; }
+.feed-item b { font-size: 13px; }
+.feed-item p { color: #b8c0ce; font-size: 13px; }
+.feed-item > small { padding-top: 2px; }
+.messages-panel .chat-form {
+  margin-top: 4px; padding: 7px; background: #0b0f16;
+  border-color: #303746; border-radius: 13px;
+}
+.messages-panel .chat-form input { background: #151a24; border-color: #303746; border-radius: 9px; }
+.messages-panel .chat-form .primary-button { border-radius: 9px; background: var(--gold); color: #19150c; }
+.squad-grid { gap: 10px; }
+.squad-card, .sets-content-panel .set-card {
+  border-radius: 14px; background: #151a24; border-color: #2c3341;
+}
+.squad-card { padding: 15px; }
+/* Tablet and phone: eliminate squeezed two-column cards and header collisions. */
+@media (max-width: 760px) {
+  .auction-topbar { flex-basis: 54px; padding: 7px 10px; gap: 7px; }
+  .auction-topbar .home-brand { font-size: 11px; }
+  .auction-topbar .brand-mark { width: 33px; height: 33px; }
+  .room-info { justify-content: flex-end; gap: 6px; }
+  .room-info > b { max-width: 74px; }
+  .status-pill { padding: 6px 7px; font-size: 9px; }
+  .code-button { padding: 7px 8px; font-size: 10px; }
+  .live-auction-panel {
+    flex: 0 0 auto; height: auto; max-height: 48dvh; min-height: 0;
+    padding: 13px 12px 14px; gap: 11px; overflow-y: auto;
+  }
+  .live-panel-title { align-items: flex-end; }
+  .live-panel-title h1 { font-size: 21px; gap: 7px; }
+  .live-panel-title .eyebrow { font-size: 9px; }
+  .auction-counts { gap: 10px; }
+  .auction-counts b { font-size: 18px; }
+  .auction-counts small { font-size: 8px; }
+  .live-player-bidding { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .current-player-card { min-height: 128px; padding: 13px; }
+  .player-placeholder { flex-basis: 66px; width: 66px; height: 76px; }
+  .player-description h2 { font-size: 20px; }
+  .bidding-card { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; gap: 9px 12px; padding: 12px; }
+  .bid-clock { grid-column: 1 / -1; min-height: 42px; padding: 6px 10px; }
+  .bid-values { grid-column: 1 / -1; }
+  .next-bid-label { grid-column: 1 / -1; }
+  .bid-now-button, .bidding-card .primary-button { grid-column: 1 / -1; min-height: 46px; }
+  .messages-panel { margin: 12px; padding: 13px; border-radius: 17px; min-height: 280px; }
+  .messages-panel .panel-heading, .messages-panel > header { gap: 8px; }
+  .message-mode-tabs button { min-height: 39px; }
+  .feed-item { padding: 10px 7px; }
+  .feed-item p { font-size: 12px; }
+  .squad-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 390px) {
+  .auction-topbar .home-brand span { display: none; }
+  .room-info > b { max-width: 58px; }
+  .live-panel-title h1 { font-size: 19px; }
+  .auction-counts { gap: 7px; }
+  .auction-counts b { font-size: 16px; }
+  .auction-counts small { font-size: 7px; }
+  .current-player-card { gap: 10px; }
+  .player-description h2 { font-size: 18px; }
+}
