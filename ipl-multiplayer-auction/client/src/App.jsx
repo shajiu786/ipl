@@ -810,12 +810,22 @@ export default function App() {
         <section className="live-bid-ticker" aria-label="Latest live bidding activity">
           <span className="ticker-label"><i /> LIVE BIDS</span>
           <div className="ticker-window">
-            <div className="ticker-track">
-              {(bids.length ? [...bids].slice(0, 8) : []).map((bid, index) => {
+            <div className={`ticker-track ${bids.length > 1 ? "ticker-track-moving" : ""}`}>
+              {(bids.length ? [...bids].slice(0, 6) : []).map((bid, index) => {
                 const bidTeam = teamInfo(bid.team_key);
-                return <span className="ticker-item" key={`ticker-${bid.id || index}`}><b>{bidTeam?.short || bid.team_key || bid.display_name || "BID"}</b> {money(bid.amount_paise)} <span>·</span> {bid.player_name || currentPlayer?.name || "Player"}</span>;
+                return <div className="ticker-item" key={`ticker-a-${bid.id || index}`}>
+                  <span className="ticker-team" style={{ "--team-color": bidTeam?.color || "#168BFF" }}>{bidTeam?.short || bid.team_key || "BID"}</span>
+                  <span className="ticker-copy"><b>{bid.display_name || bidTeam?.name || "Bidder"}</b> bid <strong>{money(bid.amount_paise)}</strong> for {bid.player_name || currentPlayer?.name || "Player"}</span>
+                </div>;
               })}
-              {!bids.length && <span className="ticker-item ticker-empty">Waiting for the first bid…</span>}
+              {bids.length > 1 && [...bids].slice(0, 6).map((bid, index) => {
+                const bidTeam = teamInfo(bid.team_key);
+                return <div className="ticker-item" key={`ticker-b-${bid.id || index}`} aria-hidden="true">
+                  <span className="ticker-team" style={{ "--team-color": bidTeam?.color || "#168BFF" }}>{bidTeam?.short || bid.team_key || "BID"}</span>
+                  <span className="ticker-copy"><b>{bid.display_name || bidTeam?.name || "Bidder"}</b> bid <strong>{money(bid.amount_paise)}</strong> for {bid.player_name || currentPlayer?.name || "Player"}</span>
+                </div>;
+              })}
+              {!bids.length && <div className="ticker-item ticker-empty">Waiting for the first bid…</div>}
             </div>
           </div>
         </section>
