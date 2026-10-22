@@ -1976,3 +1976,88 @@ button:active { transform: translateY(1px); }
   .current-player-card { gap: 10px; }
   .player-description h2 { font-size: 18px; }
 }
+
+
+/* IPL Broadcast Pro — compact responsive refinement */
+:root {
+  --bg: #090b10;
+  --panel: #11151d;
+  --panel2: #171c26;
+  --line: #292f3c;
+  --text: #f4f5f8;
+  --muted: #98a1b2;
+  --gold: #e8bf69;
+  --gold-dark: #b58a3b;
+  --green: #62d7a0;
+  --red: #ff6973;
+}
+body { background: var(--bg); }
+button, input, select { transition: border-color .16s ease, background .16s ease, transform .16s ease, box-shadow .16s ease; }
+button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.primary-button { box-shadow: none; }
+.primary-button:hover:not(:disabled) { filter: brightness(1.08); transform: translateY(-1px); }
+.secondary-button:hover:not(:disabled) { border-color: #555e70; background: #202633; }
+.panel, .home-card, .current-player-card, .bid-panel, .messages-panel, .squad-panel, .sets-panel {
+  box-shadow: none !important;
+}
+.auction-topbar {
+  min-height: 64px;
+  padding: 9px clamp(12px, 2vw, 24px);
+  gap: 10px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(9, 11, 16, .96);
+}
+.room-info, .auction-topbar > * { min-width: 0; }
+.live-panel-title { gap: 12px; }
+.auction-counts { gap: clamp(10px, 1.8vw, 24px); }
+.current-player-card, .bid-panel, .messages-panel, .squad-panel, .sets-panel {
+  border-radius: 18px;
+  border-color: var(--line);
+  background: var(--panel);
+}
+.current-player-card { padding: clamp(14px, 2vw, 22px); gap: 14px; }
+.player-description h2 { line-height: 1.15; letter-spacing: -.035em; }
+.bid-panel { padding: clamp(14px, 2vw, 20px); }
+.messages-panel { padding: clamp(12px, 2vw, 20px); }
+.message-mode-tabs { border-radius: 14px; padding: 4px; gap: 4px; }
+.message-mode-tabs button { min-height: 42px; border-radius: 10px; }
+.feed-item { border-bottom-color: #282e39; }
+.feed-item:last-child { border-bottom: 0; }
+.chat-form { display: flex; gap: 8px; align-items: center; }
+.chat-form input { flex: 1; min-width: 0; }
+.chat-form button { flex: 0 0 auto; }
+.bottom-nav, .auction-bottom-nav {
+  background: rgba(10, 12, 17, .97);
+  border-top: 1px solid var(--line);
+  backdrop-filter: blur(12px);
+}
+@media (min-width: 1100px) {
+  .auction-layout, .auction-main-grid { gap: 18px; }
+  .current-player-card, .bid-panel { min-height: 290px; }
+}
+@media (max-width: 760px) {
+  html, body, #root { min-width: 320px; }
+  body { overflow: hidden; }
+  .auction-topbar { min-height: 56px; padding: 7px 10px; gap: 6px; }
+  .auction-topbar button { min-height: 38px; padding: 7px 9px; }
+  .room-info { max-width: 34vw; overflow: hidden; }
+  .room-info > b { overflow: hidden; text-overflow: ellipsis; }
+  .live-panel-title { align-items: flex-start; }
+  .live-panel-title h1 { font-size: clamp(20px, 5vw, 27px); }
+  .auction-counts { gap: 12px; }
+  .auction-counts b { font-size: 19px; }
+  .current-player-card, .bid-panel { min-width: 0; }
+  .current-player-card { padding: 14px; }
+  .bid-panel { padding: 13px; }
+  .messages-panel { padding: 12px; border-radius: 16px; }
+  .messages-panel > header { flex-wrap: wrap; align-items: center; }
+  .message-mode-tabs button { min-width: 0; padding: 8px; }
+  .feed-item { gap: 9px; padding: 11px 5px; }
+  .feed-item p { overflow-wrap: anywhere; }
+  .chat-form { position: sticky; bottom: 0; z-index: 2; padding-top: 8px; background: var(--panel); }
+  .chat-form input { min-height: 42px; }
+  .chat-form button { min-height: 42px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; }
+}
