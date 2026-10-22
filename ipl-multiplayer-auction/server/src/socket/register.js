@@ -52,7 +52,7 @@ export function registerSockets(io, pool) {
             state.soldCount = Number(state.soldCount || 0) + 1;
             state.soldPlayerIds = Array.isArray(state.soldPlayerIds) ? state.soldPlayerIds : [];
             if (!state.soldPlayerIds.map(Number).includes(playerId)) state.soldPlayerIds.push(playerId);
-            emitted = { teamKey: state.highestBidder.teamKey, teamName: state.highestBidder.teamName,
+            emitted = { status: 'sold', teamKey: state.highestBidder.teamKey, teamName: state.highestBidder.teamName,
               playerName: state.currentPlayer?.name || 'Player', amountPaise: Number(state.currentBidPaise) };
           } else {
             state.status = 'sold';
@@ -64,6 +64,7 @@ export function registerSockets(io, pool) {
           if (!state.unsoldPlayerIds.map(Number).includes(playerId)) state.unsoldPlayerIds.push(playerId);
           state.unsoldPlayers = Array.isArray(state.unsoldPlayers) ? state.unsoldPlayers : [];
           if (state.currentPlayer && !state.unsoldPlayers.some(p => Number(p.id) === playerId)) state.unsoldPlayers.push(state.currentPlayer);
+          emitted = { status: 'unsold', playerName: state.currentPlayer?.name || 'Player', amountPaise: 0 };
         }
         state.deadline = null;
         state.pausedRemainingMs = null;
@@ -368,7 +369,8 @@ export function registerSockets(io, pool) {
         if (state.status === 'active' && state.deadline) scheduleRoomTimer(room.code, state.deadline);
         else clearRoomTimer(room.code);
         io.to(room.code).emit('auction:state',state);
-        if (action === 'sell') io.to(room.code).emit('sale:celebration', {
+        if (['sell', 'unsold'].includes(action)) io.to(room.code).emit('sale:celebration', {
+          status: action === 'unsold' ? 'unsold' : 'sold',
           teamKey: state.highestBidder?.teamKey,
           teamName: state.highestBidder?.teamName,
           playerName: state.currentPlayer?.name || 'Player',
