@@ -386,7 +386,10 @@ export default function App() {
       const id = makeId();
       const response = await api.post(
         `/api/rooms/${roomCodeInput.trim().toUpperCase()}/join`,
-        { participantId: id, displayName: displayName.trim(), teamKey: null }
+       {
+  participantId: id,
+  displayName: displayName.trim()
+}
       );
       const raw = response.data.participant || {};
       await enterRoom(roomCodeInput.trim().toUpperCase(), {
