@@ -1643,4 +1643,106 @@ h3 {
   .timer-choice select { max-width: 55%; }
   .host-auction-tools > button { flex: 1 1 auto; }
 }
- 
+
+
+/* Host live timer visibility + compact unsold inventory (mobile-first). */
+.bid-clock {
+  display: flex !important;
+  flex: 0 0 auto !important;
+  min-height: 48px;
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid #edbd5940;
+  border-radius: 12px;
+  background: linear-gradient(110deg, #edbd5917, #171b24 70%);
+  position: relative;
+  z-index: 1;
+}
+.bid-clock span { font-size: 10px; font-weight: 850; letter-spacing: .1em; }
+.bid-clock strong { display: block !important; min-width: 58px; text-align: right; font-size: 26px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.bidding-card { min-width: 0; }
+.bid-values { height: auto; min-height: 0; max-height: none; overflow: visible; }
+
+.unsold-players-section {
+  margin-top: 18px;
+  padding: 14px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #11151d;
+}
+.unsold-players-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.unsold-players-heading h3 { margin: 0; font-size: 16px; line-height: 1.25; }
+.unsold-players-heading .muted { margin: 4px 0 0; font-size: 11px; }
+.unsold-count { display: inline-flex; align-items: center; justify-content: center; min-width: 30px; height: 30px; padding: 0 8px; border: 1px solid #ff62684d; border-radius: 999px; color: #ff9b9f; background: #ff626812; font-size: 12px; font-weight: 900; }
+.unsold-player-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; min-width: 0; }
+.unsold-player-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; min-height: 42px; padding: 8px 10px; border: 1px solid #303642; border-radius: 9px; background: #191e28; }
+.unsold-player-name { min-width: 0; overflow-wrap: anywhere; color: #e8ebf2; font-size: 12px; line-height: 1.35; }
+.unsold-player-status { flex: 0 0 auto; padding: 4px 6px; border-radius: 5px; color: #ff9b9f; background: #ff626815; font-size: 8px; font-weight: 900; letter-spacing: .04em; }
+.unsold-empty { grid-column: 1 / -1; margin: 0; padding: 12px; text-align: center; font-size: 12px; }
+@media (max-width: 520px) {
+  .bid-clock { min-height: 44px; padding: 8px 10px; }
+  .bid-clock strong { font-size: 24px; }
+  .unsold-players-section { padding: 11px; }
+  .unsold-player-list { grid-template-columns: minmax(0, 1fr); }
+  .unsold-player-row { min-height: 40px; }
+}
+
+/* Split live auction activity from participant text chat. */
+.message-streams {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, .85fr);
+  gap: 12px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+.message-stream {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--border, #292e39);
+  border-radius: 14px;
+  background: rgba(255,255,255,.018);
+}
+.message-stream-heading {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex: 0 0 auto;
+  padding: 12px;
+  border-bottom: 1px solid var(--border, #292e39);
+  background: rgba(255,255,255,.025);
+}
+.stream-heading-icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  border-radius: 9px;
+  color: var(--gold, #e9bd5b);
+  background: rgba(233,189,91,.1);
+}
+.text-stream-icon { color: #91a9ff; background: rgba(115,145,255,.12); }
+.message-stream-heading h3 { margin: 0; font-size: 13px; line-height: 1.3; }
+.message-stream-heading p { margin: 3px 0 0; color: var(--muted, #929aaa); font-size: 10px; line-height: 1.3; }
+.message-stream .message-feed { flex: 1 1 auto; width: 100%; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 4px 8px; }
+.message-stream .feed-item { gap: 8px; padding: 10px 4px; }
+.message-stream .feed-item > small { flex: 0 0 auto; }
+.bid-message { border-left: 3px solid var(--team-color, var(--green)); padding-left: 8px !important; }
+.bid-message .feed-icon { color: var(--team-color, var(--green)); background: color-mix(in srgb, var(--team-color, var(--green)) 12%, transparent); }
+.auction-event-message { border-left: 3px solid var(--team-color, var(--gold)); padding-left: 8px !important; border-radius: 4px; margin: 4px 0; }
+.auction-event-message.sold { border-color: var(--team-color, var(--green)); background: color-mix(in srgb, var(--team-color, var(--green)) 9%, transparent); }
+.auction-event-message.sold .feed-icon { color: var(--team-color, var(--green)); background: color-mix(in srgb, var(--team-color, var(--green)) 15%, transparent); }
+.auction-event-message.unsold { border-color: #ff6268; background: #ff62680c; }
+.auction-event-message.skipped { border-color: #b79aff; background: #b79aff0c; }
+@media (max-width: 640px) {
+  .message-streams { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(180px, 1fr) minmax(160px, .85fr); gap: 10px; }
+  .message-stream-heading { padding: 9px 10px; }
+  .message-stream-heading h3 { font-size: 12px; }
+  .message-stream .feed-item { padding: 8px 3px; }
+  .messages-panel { min-height: 0; }
+}
