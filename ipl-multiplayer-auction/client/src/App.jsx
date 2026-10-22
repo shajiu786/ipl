@@ -81,14 +81,12 @@ export default function App() {
   const [micOn, setMicOn] = useState(false);
   const [voiceJoined, setVoiceJoined] = useState(false);
   const [muted, setMuted] = useState(false);
-  const [sale, setSale] = useState(null);
 
   const socketRef = useRef(null);
   const audioRef = useRef(null);
   const localStreamRef = useRef(null);
   const peersRef = useRef({});
   const pendingIceRef = useRef({});
-  const saleTimerRef = useRef(null);
   const voiceSocketRef = useRef(null);
 
   const participantId = participant?.participantId || participant?.participant_id;
@@ -305,10 +303,20 @@ export default function App() {
     socket.on("lobby:participants", list => { if (Array.isArray(list)) setParticipants(list); });
 
     socket.on("sale:celebration", event => {
-      setSale(event);
-      playTone(880);
-      clearTimeout(saleTimerRef.current);
-      saleTimerRef.current = setTimeout(() => setSale(null), 4500);
+      const isUnsold = event?.status === "unsold";
+      const team = event?.teamName || teamInfo(event?.teamKey)?.name;
+      const detail = isUnsold
+        ? `${event?.playerName || "Player"} marked UNSOLD`
+        : `${event?.playerName || "Player"} SOLD to ${team || "winning franchise"} for ${money(event?.amountPaise || 0)}`;
+      setMessages(old => [{
+        id: `auction-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        display_name: "AUCTION UPDATE",
+        message: detail,
+        auctionEvent: isUnsold ? "unsold" : "sold",
+        created_at: new Date().toISOString()
+      }, ...old].slice(0, 100));
+      setTab("messages");
+      playTone(isUnsold ? 420 : 880);
     });
 
     socket.on("connect_error", () => setNotice("Connection issue. Retrying…"));
@@ -322,7 +330,6 @@ export default function App() {
 
   useEffect(() => () => {
     socketRef.current?.disconnect();
-    clearTimeout(saleTimerRef.current);
     Object.values(peersRef.current).forEach(peer => peer.close());
     peersRef.current = {};
     document.querySelectorAll('audio[id^="voice-audio-"]').forEach(audio => audio.remove());
@@ -822,8 +829,8 @@ export default function App() {
                 </div>
               ))}
               {messages.map((message, index) => (
-                <div className="feed-item" key={`msg-${message.id || index}`}>
-                  <span className="feed-icon"><MessageCircle size={14} /></span>
+                <div className={`feed-item ${message.auctionEvent ? `auction-event-message ${message.auctionEvent}` : ""}`} key={`msg-${message.id || index}`}>
+                  <span className="feed-icon">{message.auctionEvent ? <Trophy size={14} /> : <MessageCircle size={14} />}</span>
                   <div><b>{message.display_name || "Participant"}</b><p>{message.message}</p></div>
                   <small>{message.created_at ? new Date(message.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}</small>
                 </div>
@@ -859,7 +866,7 @@ export default function App() {
         )}
 
         {tab === "xi" && auction.status === "ended" && (
-          <div className="content-panel">
+          <div className="content-panel xi-content-panel">
             <header className="panel-header"><div><ListOrdered size={18} /><h2>Playing XI Creator</h2></div></header>
             <div className="xi-controls">
               <label>Franchise
@@ -917,18 +924,6 @@ export default function App() {
           </div>
         )}
       </section>
-
-      {sale && (
-        <div className={`sale-overlay sale-theme-${sale.teamKey || "default"}`}>
-          <div className="sale-card" style={{ "--team-color": teamInfo(sale.teamKey)?.color || "#D9A441" }}>
-            <Trophy size={40} />
-            <h2>SOLD!</h2>
-            <h3>{sale.playerName || "Player"}</h3>
-            <strong>{money(sale.amountPaise)}</strong>
-            <p>{teamInfo(sale.teamKey)?.name || sale.teamName || "Winning franchise"}</p>
-          </div>
-        </div>
-      )}
 
       {notice && <Notice message={notice} onClose={() => setNotice("")} />}
     </main>
