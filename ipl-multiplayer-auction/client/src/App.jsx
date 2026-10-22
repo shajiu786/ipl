@@ -56,6 +56,7 @@ export default function App() {
   const [tab, setTab] = useState("messages");
   const [messageMode, setMessageMode] = useState("bids");
   const [bidConfirmOpen, setBidConfirmOpen] = useState(false);
+  const [endAuctionOpen, setEndAuctionOpen] = useState(false);
 
   const [displayName, setDisplayName] = useState("");
   const [roomCodeInput, setRoomCodeInput] = useState("");
@@ -735,9 +736,7 @@ export default function App() {
           }}><Clipboard size={14} /> {roomCode}</button>
         </div>
         <div className="topbar-actions">
-          {isHost && auction.status !== "ended" && <button className="end-auction-button" onClick={() => {
-            if (window.confirm("End the auction now? Remaining players will stay unsold.")) hostAction("end");
-          }}><X size={14} /> End Auction</button>}
+          {isHost && auction.status !== "ended" && <button className="end-auction-button" onClick={() => setEndAuctionOpen(true)}><X size={14} /> End Auction</button>}
           <button className="icon-button" onClick={leaveRoom} aria-label="Exit room" title="Exit room"><X /></button>
         </div>
       </header>
@@ -934,10 +933,10 @@ export default function App() {
             <div className="sets-list">
               {currentSetStatus.map(group => (
                 <article className="set-card" key={`${group.number}-${group.name}`}>
-                  <div className="set-card-heading"><b>{group.name}</b><small>{group.players.length} players · {group.soldCount} sold · {group.unsoldCount} unsold · {group.remainingCount} left</small></div>
+                  <div className="set-card-heading"><b>{group.name}</b><small>{group.players.filter(p => !p.unsold).length} players · {group.soldCount} sold · {group.remainingCount} left</small></div>
                   <span className={`set-status ${group.status}`}>{group.status === "completed" ? "✓ Completed" : group.status === "current" ? "● Current set" : "Upcoming"}</span>
-                  <details open={auction.status === "ended" || group.status === "completed"}><summary>View players · {group.players.length}</summary>
-                    <div className="set-player-list">{group.players.map(p => <p key={p.id} className={p.unsold ? "set-player-unsold" : p.sold ? "set-player-sold" : ""}><span>{p.name}{p.nationality && !/india|indian|local/i.test(p.nationality) ? " ✈️" : ""} · {p.role || "Role unavailable"}</span><small>{p.unsold ? "UNSOLD" : p.sold ? "SOLD" : "UPCOMING"}</small></p>)}</div>
+                  <details open={auction.status === "ended" || group.status === "completed"}><summary>View players · {group.players.filter(p => !p.unsold).length}</summary>
+                    <div className="set-player-list">{group.players.filter(p => !p.unsold).map(p => <p key={p.id} className={p.sold ? "set-player-sold" : ""}><span>{p.name}{p.nationality && !/india|indian|local/i.test(p.nationality) ? " ✈️" : ""} · {p.role || "Role unavailable"}</span><small>{p.sold ? "SOLD" : "UPCOMING"}</small></p>)}</div>
                   </details>
                 </article>
               ))}
@@ -946,6 +945,21 @@ export default function App() {
           </div>
         )}
       </section>
+
+      {endAuctionOpen && (
+        <div className="bid-confirm-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setEndAuctionOpen(false); }}>
+          <section className="bid-confirm-dialog end-auction-dialog" role="alertdialog" aria-modal="true" aria-labelledby="end-auction-title" aria-describedby="end-auction-description">
+            <div className="bid-confirm-icon danger-icon"><X size={23} /></div>
+            <p className="eyebrow">HOST CONTROL</p>
+            <h2 id="end-auction-title">End this auction?</h2>
+            <p id="end-auction-description" className="bid-confirm-copy">This ends bidding for everyone in the room. Players who have not been sold will remain unpurchased, and participants will no longer be able to place bids.</p>
+            <div className="bid-confirm-actions">
+              <button type="button" className="bid-cancel-button" onClick={() => setEndAuctionOpen(false)}>Keep auction running</button>
+              <button type="button" className="end-confirm-button" onClick={() => { setEndAuctionOpen(false); hostAction("end"); }}>End auction</button>
+            </div>
+          </section>
+        </div>
+      )}
 
       {bidConfirmOpen && (
         <div className="bid-confirm-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setBidConfirmOpen(false); }}>
