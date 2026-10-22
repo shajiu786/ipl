@@ -808,15 +808,17 @@ export default function App() {
 
       {auction.status !== "ended" && (
         <section className="live-bid-ticker" aria-label="Latest live bidding activity">
-          <span className="ticker-label"><i /> LIVE BIDS</span>
+          <span className="ticker-label"><i /> LATEST BID</span>
           <div className="ticker-window">
             {bids.length > 0 ? (() => {
               const bid = bids[0];
               const bidTeam = teamInfo(bid.team_key);
-              return <div className="ticker-item latest-bid-item" key={`latest-bid-${bid.id || bid.created_at || "current"}`}>
-                <span className="ticker-team" style={{ "--team-color": bidTeam?.color || "#168BFF" }}>{bidTeam?.short || bid.team_key || "BID"}</span>
-                <span className="ticker-copy"><b>{bid.display_name || bidTeam?.name || "Bidder"}</b> bid <strong>{money(bid.amount_paise)}</strong> for {bid.player_name || currentPlayer?.name || "Player"}</span>
-              </div>;
+              return (
+                <div className="ticker-item latest-bid-item">
+                  <span className="ticker-team" style={{ "--team-color": bidTeam?.color || "#22b8ff" }}>{bidTeam?.short || bid.team_key || "BID"}</span>
+                  <span className="ticker-copy"><b>{bid.display_name || bidTeam?.name || "Bidder"}</b> bid <strong>{money(bid.amount_paise)}</strong> for {bid.player_name || currentPlayer?.name || "Player"}</span>
+                </div>
+              );
             })() : <div className="ticker-item ticker-empty">Waiting for the first bid…</div>}
           </div>
         </section>
@@ -853,27 +855,42 @@ export default function App() {
               </div>
             </header>
 
-            <div className="message-feed chat-only-feed" role="tabpanel" aria-label="Chat and sold announcements">
-              {messages.map((message, index) => {
-                const body = message.message || "";
-                const isSold = message.type === "sold" || message.event === "sold" || /\\bsold\\b/i.test(body);
-                const teamKey = message.team_key || message.teamKey;
-                const soldTeam = teamInfo(teamKey);
-                return <div className={`feed-item ${isSold ? "sold-message" : "chat-message"}`} key={`msg-${message.id || index}`} style={isSold ? { "--team-color": soldTeam?.color || "#00D7A0" } : undefined}>
-                  <span className="feed-icon">{isSold ? <Trophy size={14} /> : <MessageCircle size={14} />}</span>
-                  <div>
-                    <b>{message.display_name || (isSold ? "Auction update" : "Participant")}</b>
-                    <p>{body}</p>
-                  </div>
-                  <small>{message.created_at ? new Date(message.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}</small>
-                </div>;
-              })}
-              {!messages.length && <p className="empty-state">No messages yet. Sold announcements and chat messages will appear here.</p>}
+            <div className="message-mode-tabs" role="tablist" aria-label="Room messages">
+              <button type="button" role="tab" aria-selected={messageMode === "bids"} className={messageMode === "bids" ? "active" : ""} onClick={() => setMessageMode("bids")}><Trophy size={15} /> Auction Updates <span>{messages.filter(m => m.auctionEvent === "sold" || m.auctionEvent === "unsold" || m.auctionEvent === "skipped").length}</span></button>
+              <button type="button" role="tab" aria-selected={messageMode === "chat"} className={messageMode === "chat" ? "active" : ""} onClick={() => setMessageMode("chat")}><MessageCircle size={15} /> Chat <span>{messages.length}</span></button>
             </div>
-            <form className="chat-form" onSubmit={sendChat}>
-              <input value={chatText} onChange={e => setChatText(e.target.value)} placeholder="Message the room…" maxLength={500} />
-              <button className="primary-button" type="submit" aria-label="Send message"><Send size={16} /></button>
-            </form>
+            {messageMode === "bids" ? (
+              <div className="message-feed live-bids-feed" role="tabpanel">
+                {messages.filter(message => ["sold", "unsold", "skipped"].includes(message.auctionEvent)).map((message, index) => {
+                  const isSold = message.auctionEvent === "sold";
+                  const isUnsold = message.auctionEvent === "unsold";
+                  const accent = isSold ? "#00d6a0" : isUnsold ? "#ff405b" : "#22b8ff";
+                  return (
+                    <div className={`feed-item auction-result-message ${message.auctionEvent}`} key={`result-${message.id || index}`} style={{ "--result-color": accent }}>
+                      <span className="feed-icon"><Trophy size={14} /></span>
+                      <div><b>{isSold ? "PLAYER SOLD" : isUnsold ? "PLAYER UNSOLD" : "PLAYER SKIPPED"}</b><p>{message.message}</p></div>
+                      <small>{message.created_at ? new Date(message.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}</small>
+                    </div>
+                  );
+                })}
+                {!messages.some(message => ["sold", "unsold", "skipped"].includes(message.auctionEvent)) && <p className="empty-state">Sold and unsold announcements will appear here.</p>}
+              </div>
+            ) : (
+              <>
+                <div className="message-feed chat-only-feed" role="tabpanel">
+                  {messages.map((message, index) => <div className="feed-item" key={`msg-${message.id || index}`}>
+                    <span className="feed-icon"><MessageCircle size={14} /></span>
+                    <div><b>{message.display_name || "Participant"}</b><p>{message.message}</p></div>
+                    <small>{message.created_at ? new Date(message.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}</small>
+                  </div>)}
+                  {!messages.length && <p className="empty-state">No text messages yet. Start the conversation.</p>}
+                </div>
+                <form className="chat-form" onSubmit={sendChat}>
+                  <input value={chatText} onChange={e => setChatText(e.target.value)} placeholder="Message the room…" maxLength={500} />
+                  <button className="primary-button" type="submit" aria-label="Send message"><Send size={16} /></button>
+                </form>
+              </>
+            )}
           </div>
         )}
 
