@@ -230,9 +230,6 @@ export function registerSockets(io, pool) {
         if (room.state?.status === 'active' && room.state?.deadline) scheduleRoomTimer(room.code, room.state.deadline);
         await pool.query('UPDATE room_participants SET connected=true WHERE room_id=$1 AND participant_id=$2',[room.id,participantId]);
         socket.to(room.code).emit('presence:changed', { participantId, connected:true });
-        const peers = [...(io.sockets.adapter.rooms.get(room.code) || [])].filter(id=>id!==socket.id).map(id=>({socketId:id}));
-        socket.emit('voice:peers', peers);
-        socket.to(room.code).emit('voice:peer-joined',{socketId:socket.id,participantId});
         ack({ ok:true, room: { code:room.code, state:room.state, config:room.config, status:room.status } });
       } catch { ack({ ok:false, error:'join_failed' }); }
     });
@@ -290,13 +287,27 @@ export function registerSockets(io, pool) {
     });
 
     socket.on('voice:join', () => {
-      if (!socket.data.roomCode) return;
-      const peers = [...(io.sockets.adapter.rooms.get(socket.data.roomCode) || [])].filter(id=>id!==socket.id).map(id=>({socketId:id}));
+      if (!socket.data.roomCode || !socket.data.participantId) return;
+      socket.data.voiceJoined = true;
+      const peers = [...io.sockets.sockets.values()]
+        .filter(peer => peer.id !== socket.id
+          && peer.data?.roomCode === socket.data.roomCode
+          && peer.data?.voiceJoined)
+        .map(peer => ({ socketId: peer.id, participantId: peer.data.participantId }));
       socket.emit('voice:peers', peers);
-      socket.to(socket.data.roomCode).emit('voice:peer-joined',{socketId:socket.id,participantId:socket.data.participantId});
+      socket.to(socket.data.roomCode).emit('voice:peer-joined', {
+        socketId: socket.id, participantId: socket.data.participantId
+      });
+    });
+    socket.on('voice:leave', () => {
+      if (!socket.data?.voiceJoined) return;
+      socket.data.voiceJoined = false;
+      socket.to(socket.data.roomCode).emit('voice:peer-left', { socketId: socket.id });
     });
     socket.on('voice:signal', ({ targetSocketId, signal } = {}) => {
-      if (!socket.data.roomCode || !targetSocketId || !signal) return;
+      if (!socket.data.roomCode || !socket.data.voiceJoined || !targetSocketId || !signal) return;
+      const target = io.sockets.sockets.get(targetSocketId);
+      if (!target || target.data?.roomCode !== socket.data.roomCode || !target.data?.voiceJoined) return;
       io.to(targetSocketId).emit('voice:signal', { from:socket.id, signal, participantId:socket.data.participantId });
     });
 
@@ -419,7 +430,11 @@ export function registerSockets(io, pool) {
 
     socket.on('disconnect', async () => {
       if(socket.data?.roomId && socket.data?.participantId) {
-        try { await pool.query('UPDATE room_participants SET connected=false WHERE room_id=$1 AND participant_id=$2',[socket.data.roomId,socket.data.participantId]); socket.to(socket.data.roomCode).emit('presence:changed',{participantId:socket.data.participantId,connected:false}); socket.to(socket.data.roomCode).emit('voice:peer-left',{socketId:socket.id}); } catch {}
+        try {
+          await pool.query('UPDATE room_participants SET connected=false WHERE room_id=$1 AND participant_id=$2',[socket.data.roomId,socket.data.participantId]);
+          socket.to(socket.data.roomCode).emit('presence:changed',{participantId:socket.data.participantId,connected:false});
+          if (socket.data.voiceJoined) socket.to(socket.data.roomCode).emit('voice:peer-left',{socketId:socket.id});
+        } catch {}
       }
     });
   }); 
