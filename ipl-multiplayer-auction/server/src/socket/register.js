@@ -305,7 +305,43 @@ export function registerSockets(io, pool) {
       try {
         const r=await pool.query('SELECT * FROM auction_rooms WHERE id=$1 FOR UPDATE',[socket.data.roomId]);
         const room=r.rows[0], state=room.state || {};
-        if(action==='start') {
+        if(action==='set-duration') {
+          const duration = Number(payload.durationSeconds);
+          if (![5, 10].includes(duration)) return ack({ok:false,error:'invalid_duration'});
+          room.config = { ...(room.config || {}), durationSeconds: duration };
+          if (state.status === 'active') state.deadline = new Date(Date.now() + duration * 1000).toISOString();
+          await pool.query('UPDATE auction_rooms SET config=$2::jsonb,state=$3::jsonb WHERE id=$1', [room.id, JSON.stringify(room.config), JSON.stringify(state)]);
+          if (state.status === 'active' && state.deadline) scheduleRoomTimer(room.code, state.deadline);
+          io.to(room.code).emit('auction:state', state);
+        } else if(action==='skip-player') {
+          clearAdvanceTimer(room.code);
+          if (!state.currentPlayerId || ['sold','unsold','ended'].includes(state.status)) return ack({ok:false,error:'no_active_player'});
+          const skippedPlayer = state.currentPlayer || {};
+          const wasActive = state.status === 'active';
+          state.completedPlayerIds = Array.isArray(state.completedPlayerIds) ? state.completedPlayerIds : [];
+          state.skippedPlayerIds = Array.isArray(state.skippedPlayerIds) ? state.skippedPlayerIds : [];
+          const skippedId = Number(state.currentPlayerId);
+          if (!state.completedPlayerIds.map(Number).includes(skippedId)) state.completedPlayerIds.push(skippedId);
+          if (!state.skippedPlayerIds.map(Number).includes(skippedId)) state.skippedPlayerIds.push(skippedId);
+          await ensureAuctionOrder(room, state);
+          const next = await selectNextFromSavedOrder(state);
+          state.currentBidPaise = 0;
+          state.highestBidder = null;
+          state.pausedRemainingMs = null;
+          if (!next) {
+            state.currentPlayerId = null; state.currentPlayer = null; state.status = 'ended'; state.deadline = null; room.status = 'ended';
+          } else {
+            state.currentPlayerId = Number(next.id); state.currentPlayer = next;
+            state.currentSetNumber = next.source_data?.set_number ?? next.source_data?.setNumber ?? 'Unassigned';
+            state.status = wasActive ? 'active' : 'ready';
+            state.deadline = wasActive ? new Date(Date.now() + Number(room.config.durationSeconds || 10) * 1000).toISOString() : null;
+            room.status = state.status;
+          }
+          await pool.query('UPDATE auction_rooms SET state=$2::jsonb,status=$3 WHERE id=$1', [room.id, JSON.stringify(state), room.status]);
+          if (state.status === 'active' && state.deadline) scheduleRoomTimer(room.code, state.deadline); else clearRoomTimer(room.code);
+          io.to(room.code).emit('auction:state', state);
+          io.to(room.code).emit('sale:skipped', { playerName: skippedPlayer.name || 'Player', nextPlayerName: state.currentPlayer?.name || null });
+        } else if(action==='start') {
           await ensureAuctionOrder(room, state);
           if(!state.currentPlayerId) {
             const next = await selectNextFromSavedOrder(state);
