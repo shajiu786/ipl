@@ -1551,3 +1551,78 @@ h3 {
   .end-auction-button svg { width: 12px; }
   .sets-content-panel { padding: 10px; }
 } 
+
+/* UX fix: Playing XI and sets must scroll inside their own content panel. */
+.xi-content-panel {
+  overflow-y: auto !important;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  -webkit-overflow-scrolling: touch;
+}
+.xi-content-panel .xi-list {
+  min-height: 0;
+  overflow: visible;
+  padding-bottom: 8px;
+}
+.xi-content-panel > .primary-button {
+  position: sticky;
+  bottom: 0;
+  flex: 0 0 auto;
+  box-shadow: 0 -8px 18px #12151d;
+}
+
+/* Cleaner, more readable auction set inventory. */
+.sets-content-panel .set-progress-banner { flex: 0 0 auto; }
+.sets-content-panel .sets-filters {
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding: 1px 1px 9px;
+  scrollbar-width: thin;
+}
+.sets-content-panel .sets-filters button { flex: 0 0 auto; white-space: nowrap; }
+.sets-content-panel .sets-list { align-content: start; }
+.sets-content-panel .set-card {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  border-left: 3px solid #343b4a;
+  transition: border-color .18s ease, background .18s ease;
+}
+.sets-content-panel .set-card:has(.set-status.current) {
+  border-left-color: var(--gold);
+  background: linear-gradient(100deg, #edbd5910, #171b24 45%);
+}
+.sets-content-panel .set-card-heading small { line-height: 1.6; }
+.sets-content-panel .set-player-list p { align-items: center; min-width: 0; }
+.sets-content-panel .set-player-list p > span { min-width: 0; overflow-wrap: anywhere; }
+.sets-content-panel > h3 { margin-top: 20px; }
+
+/* Sold / unsold feedback lives in Live Messages, never as a blocking overlay. */
+.auction-event-message {
+  border: 1px solid #edbd5940;
+  border-radius: 10px;
+  margin: 5px 0;
+  background: #edbd590c;
+  animation: auction-message-flash .8s ease-out both;
+}
+.auction-event-message .feed-icon { color: var(--gold); }
+.auction-event-message.sold { border-color: #63d6a155; background: #63d6a10c; }
+.auction-event-message.sold .feed-icon { color: var(--green); background: #63d6a118; }
+.auction-event-message.unsold { border-color: #ff626855; background: #ff62680c; }
+.auction-event-message.unsold .feed-icon { color: var(--red); background: #ff626812; }
+.auction-event-message b { font-size: 10px; letter-spacing: .07em; }
+.auction-event-message p { font-weight: 750; }
+@keyframes auction-message-flash {
+  0% { opacity: .35; transform: translateY(4px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+@media (max-width: 680px) {
+  .xi-content-panel { padding: 10px; }
+  .xi-controls { align-items: stretch; flex-direction: column; }
+  .xi-controls label { width: 100%; }
+  .sets-content-panel .set-progress-banner { align-items: flex-start; flex-direction: column; gap: 7px; }
+  .sets-content-panel .set-progress-banner > span { text-align: left; }
+  .sets-content-panel .set-card { grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 11px; }
+  .sets-content-panel .set-status { justify-self: start; }
+}
