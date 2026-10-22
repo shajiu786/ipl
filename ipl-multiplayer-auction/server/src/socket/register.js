@@ -2,6 +2,77 @@ import { z } from 'zod';
 import { nextBidAmount, TEAM_NAMES } from '../services/auction.js';
 
 export function registerSockets(io, pool) {
+  const deadlineTimers = new Map();
+  const clearRoomTimer = code => {
+    const timer = deadlineTimers.get(code);
+    if (timer) clearTimeout(timer);
+    deadlineTimers.delete(code);
+  };
+  const scheduleRoomTimer = (code, deadline) => {
+    clearRoomTimer(code);
+    if (!deadline) return;
+    const delay = Math.max(0, new Date(deadline).getTime() - Date.now());
+    const timer = setTimeout(() => { settleExpiredAuction(code).catch(() => {}); }, delay);
+    deadlineTimers.set(code, timer);
+  };
+  const settleExpiredAuction = async code => {
+    const client = await pool.connect();
+    let emitted = null;
+    try {
+      await client.query('BEGIN');
+      const result = await client.query('SELECT * FROM auction_rooms WHERE code=$1 FOR UPDATE', [String(code).toUpperCase()]);
+      if (!result.rowCount) { await client.query('ROLLBACK'); return; }
+      const room = result.rows[0];
+      const state = room.state || {};
+      if (state.status !== 'active' || !state.deadline || Date.now() < new Date(state.deadline).getTime()) {
+        await client.query('ROLLBACK');
+        if (state.status === 'active' && state.deadline) scheduleRoomTimer(room.code, state.deadline);
+        return;
+      }
+      const playerId = Number(state.currentPlayerId || 0);
+      if (!playerId) {
+        state.status = 'ended'; state.deadline = null; room.status = 'ended';
+      } else {
+        state.completedPlayerIds = Array.isArray(state.completedPlayerIds) ? state.completedPlayerIds : [];
+        if (!state.completedPlayerIds.map(Number).includes(playerId)) state.completedPlayerIds.push(playerId);
+        if (state.highestBidder && Number(state.currentBidPaise) > 0) {
+          const inserted = await client.query(
+            `INSERT INTO room_squad_players(room_id,team_key,player_id,purchase_price_paise)
+             VALUES($1,$2,$3,$4) ON CONFLICT(room_id,player_id) DO NOTHING RETURNING player_id`,
+            [room.id, state.highestBidder.teamKey, playerId, Number(state.currentBidPaise)]
+          );
+          if (inserted.rowCount) {
+            state.status = 'sold';
+            state.soldCount = Number(state.soldCount || 0) + 1;
+            emitted = { teamKey: state.highestBidder.teamKey, teamName: state.highestBidder.teamName,
+              playerName: state.currentPlayer?.name || 'Player', amountPaise: Number(state.currentBidPaise) };
+          } else {
+            state.status = 'sold';
+          }
+        } else {
+          state.status = 'unsold';
+          state.unsoldCount = Number(state.unsoldCount || 0) + 1;
+          state.unsoldPlayerIds = Array.isArray(state.unsoldPlayerIds) ? state.unsoldPlayerIds : [];
+          if (!state.unsoldPlayerIds.map(Number).includes(playerId)) state.unsoldPlayerIds.push(playerId);
+          state.unsoldPlayers = Array.isArray(state.unsoldPlayers) ? state.unsoldPlayers : [];
+          if (state.currentPlayer && !state.unsoldPlayers.some(p => Number(p.id) === playerId)) state.unsoldPlayers.push(state.currentPlayer);
+        }
+        state.deadline = null;
+        state.pausedRemainingMs = null;
+        room.status = state.status;
+      }
+      await client.query('UPDATE auction_rooms SET state=$2::jsonb,status=$3 WHERE id=$1', [room.id, JSON.stringify(state), room.status]);
+      await client.query('COMMIT');
+      io.to(room.code).emit('auction:state', state);
+      if (emitted) io.to(room.code).emit('sale:celebration', emitted);
+    } catch (error) {
+      try { await client.query('ROLLBACK'); } catch {}
+      throw error;
+    } finally {
+      client.release();
+      clearRoomTimer(String(code).toUpperCase());
+    }
+  };
   const roomIdFor = async code => {
     const r = await pool.query('SELECT * FROM auction_rooms WHERE code=$1', [String(code || '').toUpperCase()]);
     return r.rows[0] || null;
@@ -51,6 +122,7 @@ export function registerSockets(io, pool) {
         if (!p.rowCount) return ack({ ok:false, error:'not_a_room_member' });
         socket.data = { roomId: room.id, roomCode: room.code, participantId, teamKey: p.rows[0].team_key, isHost: p.rows[0].is_host };
         socket.join(room.code);
+        if (room.state?.status === 'active' && room.state?.deadline) scheduleRoomTimer(room.code, room.state.deadline);
         await pool.query('UPDATE room_participants SET connected=true WHERE room_id=$1 AND participant_id=$2',[room.id,participantId]);
         socket.to(room.code).emit('presence:changed', { participantId, connected:true });
         const peers = [...(io.sockets.adapter.rooms.get(room.code) || [])].filter(id=>id!==socket.id).map(id=>({socketId:id}));
@@ -86,10 +158,12 @@ export function registerSockets(io, pool) {
           [room.id,state.currentPlayerId,p.data.participantId,member.rows[0].team_key,next]);
         state.currentBidPaise = next;
         state.highestBidder = { participantId:p.data.participantId, displayName:member.rows[0].display_name, teamKey:member.rows[0].team_key, teamName:TEAM_NAMES[member.rows[0].team_key] };
+        state.deadline = new Date(Date.now() + Number(room.config.durationSeconds || 10) * 1000).toISOString();
         state.auctionVersion = Number(state.auctionVersion || 0) + 1;
         await client.query('UPDATE auction_rooms SET state=$2::jsonb WHERE id=$1',[room.id,JSON.stringify(state)]);
         await client.query('COMMIT');
         const response = { ok:true, bid:bid.rows[0], state, nextBidPaise:nextBidAmount(room,state) };
+        scheduleRoomTimer(room.code, state.deadline);
         io.to(room.code).emit('auction:state',state);
         io.to(room.code).emit('bid:accepted',{...response, participantName:member.rows[0].display_name, teamKey:member.rows[0].team_key});
         ack(response);
@@ -139,8 +213,16 @@ export function registerSockets(io, pool) {
           const next = await selectNextFromSavedOrder(state);
           if (!next) { state.currentPlayerId=null; state.currentPlayer=null; state.status='ended'; state.deadline=null; room.status='ended'; }
           else { state.currentPlayerId=Number(next.id); state.currentPlayer=next; state.currentBidPaise=0; state.highestBidder=null; state.status='ready'; state.deadline=null; room.status='ready'; }
-        } else if(action==='pause') { state.status='paused'; state.deadline=null; room.status='paused'; }
-        else if(action==='resume') { state.status='active'; state.deadline=new Date(Date.now()+Number(room.config.durationSeconds||10)*1000).toISOString(); room.status='active'; }
+        } else if(action==='pause') {
+          if (state.status !== 'active') return ack({ok:false,error:'auction_not_active'});
+          state.pausedRemainingMs = Math.max(0, new Date(state.deadline || Date.now()).getTime() - Date.now());
+          state.status='paused'; state.deadline=null; room.status='paused';
+        }
+        else if(action==='resume') {
+          if (state.status !== 'paused') return ack({ok:false,error:'auction_not_paused'});
+          const remainingMs = Math.max(1000, Number(state.pausedRemainingMs || Number(room.config.durationSeconds || 10) * 1000));
+          state.status='active'; state.deadline=new Date(Date.now()+remainingMs).toISOString(); state.pausedRemainingMs=null; room.status='active';
+        }
         else if(action==='set-player') {
           const id=Number(payload.playerId);
           const player=await pool.query('SELECT id,name,role,nationality,batting_style,bowling_style,photo_url,base_price_paise,source_data FROM players WHERE id=$1',[id]);
@@ -149,12 +231,30 @@ export function registerSockets(io, pool) {
         } else if(action==='sell') {
           if(!state.highestBidder || !state.currentPlayerId)return ack({ok:false,error:'no_valid_bid'});
           await pool.query('INSERT INTO room_squad_players(room_id,team_key,player_id,purchase_price_paise) VALUES($1,$2,$3,$4) ON CONFLICT(room_id,player_id) DO NOTHING',[room.id,state.highestBidder.teamKey,state.currentPlayerId,state.currentBidPaise]);
-          state.status='sold';state.soldCount=Number(state.soldCount||0)+1;state.deadline=null;room.status='ready';state.completedPlayerIds=Array.isArray(state.completedPlayerIds)?state.completedPlayerIds:[];if(!state.completedPlayerIds.includes(Number(state.currentPlayerId)))state.completedPlayerIds.push(Number(state.currentPlayerId));
-        } else if(action==='unsold') { state.status='unsold';state.unsoldCount=Number(state.unsoldCount||0)+1;state.deadline=null;room.status='ready';state.completedPlayerIds=Array.isArray(state.completedPlayerIds)?state.completedPlayerIds:[];state.unsoldPlayerIds=Array.isArray(state.unsoldPlayerIds)?state.unsoldPlayerIds:[];if(state.currentPlayerId&&!state.completedPlayerIds.includes(Number(state.currentPlayerId)))state.completedPlayerIds.push(Number(state.currentPlayerId));if(state.currentPlayerId&&!state.unsoldPlayerIds.includes(Number(state.currentPlayerId)))state.unsoldPlayerIds.push(Number(state.currentPlayerId)); }
+          state.status='sold';state.soldCount=Number(state.soldCount||0)+1;state.deadline=null;room.status='ready';state.completedPlayerIds=Array.isArray(state.completedPlayerIds)?state.completedPlayerIds:[];if(!state.completedPlayerIds.map(Number).includes(Number(state.currentPlayerId)))state.completedPlayerIds.push(Number(state.currentPlayerId));
+        } else if(action==='unsold') {
+          if (!state.currentPlayerId || ['sold','unsold','ended'].includes(state.status)) return ack({ok:false,error:'no_active_player'});
+          state.status='unsold';state.unsoldCount=Number(state.unsoldCount||0)+1;state.deadline=null;room.status='ready';
+          state.completedPlayerIds=Array.isArray(state.completedPlayerIds)?state.completedPlayerIds:[];
+          state.unsoldPlayerIds=Array.isArray(state.unsoldPlayerIds)?state.unsoldPlayerIds:[];
+          state.unsoldPlayers=Array.isArray(state.unsoldPlayers)?state.unsoldPlayers:[];
+          if(!state.completedPlayerIds.map(Number).includes(Number(state.currentPlayerId)))state.completedPlayerIds.push(Number(state.currentPlayerId));
+          if(!state.unsoldPlayerIds.map(Number).includes(Number(state.currentPlayerId)))state.unsoldPlayerIds.push(Number(state.currentPlayerId));
+          if(state.currentPlayer && !state.unsoldPlayers.some(p=>Number(p.id)===Number(state.currentPlayerId)))state.unsoldPlayers.push(state.currentPlayer);
+        }
         else if(action==='end') { state.status='ended';state.deadline=null;room.status='ended'; }
         else return ack({ok:false,error:'unknown_action'});
         await pool.query('UPDATE auction_rooms SET state=$2::jsonb,status=$3 WHERE id=$1',[room.id,JSON.stringify(state),room.status]);
-        io.to(room.code).emit('auction:state',state);ack({ok:true,state});
+        if (state.status === 'active' && state.deadline) scheduleRoomTimer(room.code, state.deadline);
+        else clearRoomTimer(room.code);
+        io.to(room.code).emit('auction:state',state);
+        if (action === 'sell') io.to(room.code).emit('sale:celebration', {
+          teamKey: state.highestBidder?.teamKey,
+          teamName: state.highestBidder?.teamName,
+          playerName: state.currentPlayer?.name || 'Player',
+          amountPaise: Number(state.currentBidPaise || 0)
+        });
+        ack({ok:true,state});
       } catch { ack({ok:false,error:'host_action_failed'}); }
     });
 
