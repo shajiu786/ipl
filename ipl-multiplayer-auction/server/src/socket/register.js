@@ -318,8 +318,9 @@ export function registerSockets(io, pool) {
         const room=r.rows[0], state=room.state || {};
         if(action==='set-duration') {
           const duration = Number(payload.durationSeconds);
-          if (![5, 10].includes(duration)) return ack({ok:false,error:'invalid_duration'});
+          if (!Number.isInteger(duration) || duration < 5 || duration > 10) return ack({ok:false,error:'invalid_duration'});
           room.config = { ...(room.config || {}), durationSeconds: duration };
+          state.durationSeconds = duration;
           if (state.status === 'active') state.deadline = new Date(Date.now() + duration * 1000).toISOString();
           await pool.query('UPDATE auction_rooms SET config=$2::jsonb,state=$3::jsonb WHERE id=$1', [room.id, JSON.stringify(room.config), JSON.stringify(state)]);
           if (state.status === 'active' && state.deadline) scheduleRoomTimer(room.code, state.deadline);
