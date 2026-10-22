@@ -83,14 +83,12 @@ export default function App() {
   const [micOn, setMicOn] = useState(false);
   const [voiceJoined, setVoiceJoined] = useState(false);
   const [muted, setMuted] = useState(false);
-  const [sale, setSale] = useState(null);
 
   const socketRef = useRef(null);
   const audioRef = useRef(null);
   const localStreamRef = useRef(null);
   const peersRef = useRef({});
   const pendingIceRef = useRef({});
-  const saleTimerRef = useRef(null);
   const voiceSocketRef = useRef(null);
 
   const participantId = participant?.participantId || participant?.participant_id;
@@ -307,10 +305,34 @@ export default function App() {
     socket.on("lobby:participants", list => { if (Array.isArray(list)) setParticipants(list); });
 
     socket.on("sale:celebration", event => {
-      setSale(event);
-      playTone(880);
-      clearTimeout(saleTimerRef.current);
-      saleTimerRef.current = setTimeout(() => setSale(null), 4500);
+      const isUnsold = event?.status === "unsold";
+      const team = event?.teamName || teamInfo(event?.teamKey)?.name;
+      const detail = isUnsold
+        ? `${event?.playerName || "Player"} marked UNSOLD`
+        : `${event?.playerName || "Player"} SOLD to ${team || "winning franchise"} for ${money(event?.amountPaise || 0)}`;
+      setMessages(old => [{
+        id: `auction-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        display_name: "AUCTION UPDATE",
+        message: detail,
+        auctionEvent: isUnsold ? "unsold" : "sold",
+        team_key: event?.teamKey || event?.team_key || null,
+        created_at: new Date().toISOString()
+      }, ...old].slice(0, 100));
+      setTab("messages");
+      setMessageMode("bids");
+      playTone(isUnsold ? 420 : 880);
+    });
+
+    socket.on("sale:skipped", event => {
+      setMessages(old => [{
+        id: `auction-skip-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        display_name: "AUCTION UPDATE",
+        message: `${event?.playerName || "Player"} skipped by host${event?.nextPlayerName ? ` · Next: ${event.nextPlayerName}` : " · Auction complete"}`,
+        auctionEvent: "skipped",
+        created_at: new Date().toISOString()
+      }, ...old].slice(0, 100));
+      setTab("messages");
+      setMessageMode("bids");
     });
 
     socket.on("connect_error", () => setNotice("Connection issue. Retrying…"));
@@ -324,7 +346,6 @@ export default function App() {
 
   useEffect(() => () => {
     socketRef.current?.disconnect();
-    clearTimeout(saleTimerRef.current);
     Object.values(peersRef.current).forEach(peer => peer.close());
     peersRef.current = {};
     document.querySelectorAll('audio[id^="voice-audio-"]').forEach(audio => audio.remove());
@@ -922,11 +943,6 @@ export default function App() {
               ))}
               {!currentSetStatus.length && <p className="empty-state">No sets match this filter. Check that your player API includes set metadata.</p>}
             </div>
-            <h3>Unsold players</h3>
-            {auction.unsoldPlayers?.length
-              ? auction.unsoldPlayers.map(p => <span className="unsold-chip" key={p.id}>{p.name}</span>)
-              : players.filter(p => (auction.unsoldPlayerIds || []).map(Number).includes(Number(p.id))).map(p => <span className="unsold-chip" key={p.id}>{p.name}</span>)}
-            {!auction.unsoldPlayers?.length && !(auction.unsoldPlayerIds || []).length && <p className="muted">No unsold players yet.</p>}
           </div>
         )}
       </section>
@@ -948,17 +964,7 @@ export default function App() {
         </div>
       )}
 
-      {sale && (
-        <div className={`sale-overlay sale-theme-${sale.teamKey || "default"}`}>
-          <div className="sale-card" style={{ "--team-color": teamInfo(sale.teamKey)?.color || "#D9A441" }}>
-            <Trophy size={40} />
-            <h2>SOLD!</h2>
-            <h3>{sale.playerName || "Player"}</h3>
-            <strong>{money(sale.amountPaise)}</strong>
-            <p>{teamInfo(sale.teamKey)?.name || sale.teamName || "Winning franchise"}</p>
-          </div>
-        </div>
-      )}
+
 
       {notice && <Notice message={notice} onClose={() => setNotice("")} />}
     </main>
