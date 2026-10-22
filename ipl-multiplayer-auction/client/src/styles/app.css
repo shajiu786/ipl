@@ -1714,3 +1714,111 @@ h3 {
 }
 
 
+
+
+/* Production interaction and visual contracts — Auction Room */
+:root {
+  --bg: #090b10;
+  --panel: #11151d;
+  --panel2: #171d28;
+  --line: #2a3342;
+  --text: #f4f6fb;
+  --muted: #a0aabd;
+  --gold: #efc35d;
+  --gold-dark: #bd8d31;
+  --green: #63d6a1;
+  --red: #ff7378;
+  --focus-ring: #f5cf72;
+  color-scheme: dark;
+}
+html { scrollbar-color: #485264 #0b0e14; scrollbar-width: thin; }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: #0b0e14; }
+*::-webkit-scrollbar-thumb { background: #485264; border: 2px solid #0b0e14; border-radius: 8px; }
+*::-webkit-scrollbar-thumb:hover { background: #657188; }
+*::-webkit-scrollbar-thumb:active { background: #8793a6; }
+button, input, select, summary, a { -webkit-tap-highlight-color: transparent; }
+button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible, a:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+button { touch-action: manipulation; }
+::selection { color: #15120b; background: #efc35d; }
+.end-auction-button { transition: background .16s ease, border-color .16s ease, transform .16s ease; }
+.end-auction-button:hover:not(:disabled) { transform: translateY(-1px); }
+.danger-icon { color: #ff9b9f !important; background: #ff737814 !important; border-color: #ff73783b !important; }
+.end-confirm-button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 44px; padding: 11px 17px; border: 1px solid #ff7378;
+  border-radius: 10px; color: #fff; background: #c63c48; font: inherit; font-weight: 800;
+  transition: background .15s ease, transform .15s ease;
+}
+.end-confirm-button:hover { background: #df4c58; transform: translateY(-1px); }
+.end-auction-dialog .bid-confirm-actions { justify-content: flex-end; flex-wrap: wrap; }
+.end-auction-dialog .bid-cancel-button { min-height: 44px; }
+.current-player-card, .bidding-card, .content-panel, .squad-card, .set-card {
+  box-shadow: 0 12px 30px #00000012;
+}
+.live-badge { white-space: nowrap; }
+.message-feed, .sets-list, .xi-list { scrollbar-gutter: stable; }
+.feed-item { overflow-wrap: anywhere; }
+.feed-item p { line-height: 1.45; }
+.primary-button:active:not(:disabled), .secondary-button:active:not(:disabled),
+.bid-now-button:active:not(:disabled), .bid-confirm-button:active:not(:disabled) { transform: translateY(1px); }
+input::placeholder { color: #7f899b; opacity: 1; }
+[aria-busy="true"] { cursor: progress; }
+@media (max-width: 760px) {
+  body { overflow: auto; }
+  html, body, #root { min-height: 100%; height: auto; }
+  .auction-app { min-height: 100dvh; height: auto; overflow: visible; }
+  .auction-topbar { position: relative; flex-wrap: wrap; gap: 10px; }
+  .room-info { order: 3; width: 100%; }
+  .participant-identity { position: relative; }
+  .live-auction-panel { min-width: 0; }
+  .live-panel-title { align-items: flex-start; gap: 12px; }
+  .auction-counts { gap: 9px; }
+  .auction-counts > span { min-width: 43px; }
+  .live-player-bidding { grid-template-columns: minmax(0, 1fr); }
+  .current-player-card { min-height: 0; }
+  .lower-content { padding-bottom: 24px; }
+  .bottom-nav { position: sticky; bottom: 0; z-index: 30; }
+  .messages-panel { min-height: 360px; }
+  .message-feed { max-height: 360px; }
+}
+@media (max-width: 480px) {
+  .home-grid, .lobby-grid { grid-template-columns: minmax(0, 1fr); }
+  .auction-topbar { padding-inline: 12px; }
+  .topbar-actions { gap: 6px; }
+  .participant-identity { padding: 10px 12px; }
+  .live-auction-panel { padding: 12px; }
+  .live-panel-title h1 { font-size: 25px; }
+  .auction-counts small { font-size: 8px; }
+  .current-player-card { grid-template-columns: 78px minmax(0, 1fr); gap: 12px; }
+  .player-placeholder { min-height: 104px; }
+  .player-placeholder svg { width: 25px; }
+  .player-description h2 { font-size: 20px; overflow-wrap: anywhere; }
+  .bidding-card { padding: 13px; }
+  .host-team-summary { flex-wrap: wrap; }
+  .host-actions { flex-wrap: wrap; }
+  .bottom-nav { gap: 3px; padding: 6px; }
+  .bottom-nav button { min-height: 44px; padding: 7px 5px; gap: 5px; font-size: 10px; }
+  .panel-header { gap: 8px; }
+  .voice-controls { gap: 5px; }
+  .voice-join-button { padding-inline: 9px; }
+  .end-auction-dialog .bid-confirm-actions { flex-direction: column-reverse; }
+  .end-auction-dialog .bid-confirm-actions button { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}
+@media (forced-colors: active) {
+  button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible {
+    outline: 2px solid Highlight;
+  }
+  .status-pill, .live-badge, .set-status { border: 1px solid CanvasText; }
+}
