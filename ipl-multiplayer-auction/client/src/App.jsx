@@ -56,7 +56,6 @@ export default function App() {
   const [tab, setTab] = useState("messages");
 
   const [displayName, setDisplayName] = useState("");
-  const [roomName, setRoomName] = useState("Friday Night Auction");
   const [roomCodeInput, setRoomCodeInput] = useState("");
   const [roomCode, setRoomCode] = useState("");
   const [teamKey, setTeamKey] = useState("csk");
@@ -80,6 +79,7 @@ export default function App() {
   const [setsFilter, setSetsFilter] = useState("all");
   const [soundOn, setSoundOn] = useState(true);
   const [micOn, setMicOn] = useState(false);
+  const [voiceJoined, setVoiceJoined] = useState(false);
   const [muted, setMuted] = useState(false);
   const [sale, setSale] = useState(null);
 
@@ -87,6 +87,7 @@ export default function App() {
   const audioRef = useRef(null);
   const localStreamRef = useRef(null);
   const peersRef = useRef({});
+  const pendingIceRef = useRef({});
   const saleTimerRef = useRef(null);
   const voiceSocketRef = useRef(null);
 
@@ -220,9 +221,11 @@ export default function App() {
           audio.id = `voice-audio-${targetSocketId}`;
           audio.autoplay = true;
           audio.playsInline = true;
+          audio.muted = !soundOn;
           audio.style.display = "none";
           document.body.appendChild(audio);
         }
+        audio.muted = !soundOn;
         audio.srcObject = event.streams[0];
         audio.play().catch(() => setNotice("Tap the page once to allow incoming voice audio."));
       };
@@ -260,19 +263,24 @@ export default function App() {
         if (!pc) return;
         if (signal.description) {
           await pc.setRemoteDescription(new RTCSessionDescription(signal.description));
+          const queued = pendingIceRef.current[from] || [];
+          for (const candidate of queued) await pc.addIceCandidate(new RTCIceCandidate(candidate));
+          delete pendingIceRef.current[from];
           if (signal.description.type === "offer") {
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
             sendVoiceSignal(from, { description: pc.localDescription });
           }
         } else if (signal.candidate) {
-          await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+          if (pc.remoteDescription) await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+          else pendingIceRef.current[from] = [...(pendingIceRef.current[from] || []), signal.candidate];
         }
       } catch (error) { console.error("Voice signaling failed", error); }
     });
     socket.on("voice:peer-left", ({ socketId: peerId } = {}) => {
       peersRef.current[peerId]?.close();
       delete peersRef.current[peerId];
+      delete pendingIceRef.current[peerId];
       document.getElementById(`voice-audio-${peerId}`)?.remove();
     });
 
@@ -282,6 +290,10 @@ export default function App() {
       if (state?.status === "active" || state?.status === "paused" || state?.status === "sold" || state?.status === "unsold" || state?.status === "ended") {
         setPage("auction");
       }
+    });
+    socket.on("auction:set-complete", event => {
+      setNotice(`${event?.completedSetName || `Set ${event?.completedSetNumber}`} completed. ${event?.nextSetName || `Set ${event?.nextSetNumber}`} is starting!`);
+      playTone(980);
     });
     socket.on("bid:accepted", event => {
       setBids(old => [event.bid, ...old].slice(0, 100));
@@ -301,7 +313,11 @@ export default function App() {
     socket.on("connect_error", () => setNotice("Connection issue. Retrying…"));
 
     await Promise.all([loadRoomData(code), loadPlayers()]);
-  }, [loadPlayers, loadRoomData, playTone]);
+  }, [loadPlayers, loadRoomData, playTone, soundOn]);
+
+  useEffect(() => {
+    document.querySelectorAll('audio[id^="voice-audio-"]').forEach(audio => { audio.muted = !soundOn; });
+  }, [soundOn]);
 
   useEffect(() => () => {
     socketRef.current?.disconnect();
@@ -339,7 +355,7 @@ export default function App() {
     try {
       const id = makeId();
       const response = await api.post("/api/rooms", {
-        name: roomName.trim(),
+        name: `${displayName.trim()}'s IPL Auction`,
         displayName: displayName.trim(),
         participantId: id
       });
@@ -480,6 +496,9 @@ export default function App() {
     socketRef.current?.disconnect();
     socketRef.current = null;
     localStreamRef.current?.getTracks().forEach(track => track.stop());
+    setVoiceJoined(false);
+    setMicOn(false);
+    setMuted(false);
     setRoom(null);
     setParticipant(null);
     setRoomCode("");
@@ -487,26 +506,39 @@ export default function App() {
   };
 
   const startVoice = async () => {
+    if (voiceJoined) {
+      Object.values(peersRef.current).forEach(peer => peer.close());
+      peersRef.current = {};
+      pendingIceRef.current = {};
+      document.querySelectorAll('audio[id^="voice-audio-"]').forEach(audio => audio.remove());
+      localStreamRef.current?.getTracks().forEach(track => track.stop());
+      localStreamRef.current = null;
+      setVoiceJoined(false);
+      setMicOn(false);
+      setMuted(false);
+      setNotice("You left voice chat.");
+      return;
+    }
     try {
-      if (micOn) {
-        Object.values(peersRef.current).forEach(peer => peer.close());
-        peersRef.current = {};
-        document.querySelectorAll('audio[id^="voice-audio-"]').forEach(audio => audio.remove());
-        localStreamRef.current?.getTracks().forEach(track => track.stop());
-        localStreamRef.current = null;
-        setMicOn(false);
-        setNotice("Voice chat disconnected.");
-        return;
-      }
       if (!navigator.mediaDevices?.getUserMedia) {
         setNotice("Voice chat requires HTTPS and a browser with microphone support.");
         return;
       }
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true }, video: false });
+      if (!socketRef.current?.connected) {
+        setNotice("Connect to the room before joining voice chat.");
+        return;
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        video: false
+      });
       localStreamRef.current = stream;
+      stream.getAudioTracks().forEach(track => { track.enabled = true; });
       setMicOn(true);
-      socketRef.current?.emit("voice:join");
-      setNotice("Voice chat connected. Other participants must also enable their microphones.");
+      setMuted(false);
+      setVoiceJoined(true);
+      socketRef.current.emit("voice:join");
+      setNotice("Voice chat joined. Other players must select Join Voice too.");
     } catch (error) {
       setNotice(error?.name === "NotAllowedError" ? "Allow microphone permission in your browser settings." : "Microphone unavailable. Use HTTPS and check your audio device.");
     }
@@ -541,6 +573,7 @@ export default function App() {
   const currentSetStatus = useMemo(() => {
     const state = auction;
     const doneIds = new Set([
+      ...(state.completedPlayerIds || []),
       ...(state.soldPlayerIds || []),
       ...(state.unsoldPlayerIds || [])
     ].map(Number));
@@ -552,17 +585,21 @@ export default function App() {
       if (!groups.has(setNumber)) groups.set(setNumber, { number: setNumber, name: setName, players: [] });
       groups.get(setNumber).players.push({
         ...player,
-        sold: doneIds.has(Number(player.id))
+        sold: (state.soldPlayerIds || []).map(Number).includes(Number(player.id)),
+        unsold: (state.unsoldPlayerIds || []).map(Number).includes(Number(player.id))
       });
     });
 
     return [...groups.values()].map(group => {
-      const completed = group.players.length > 0 && group.players.every(p => p.sold);
-      const upcoming = group.players.every(p => !p.sold) &&
-        group.number !== Number(state.currentSetNumber);
+      const completed = group.players.length > 0 && group.players.every(p => doneIds.has(Number(p.id)));
+      const upcoming = group.players.every(p => !doneIds.has(Number(p.id))) &&
+        String(group.number) !== String(state.currentSetNumber ?? "");
       return {
         ...group,
-        status: completed ? "completed" : upcoming ? "upcoming" : "current"
+        status: completed ? "completed" : upcoming ? "upcoming" : "current",
+        soldCount: group.players.filter(p => p.sold && !p.unsold).length,
+        unsoldCount: group.players.filter(p => p.unsold).length,
+        remainingCount: group.players.filter(p => !doneIds.has(Number(p.id))).length
       };
     }).filter(group => setsFilter === "all" || group.status === setsFilter);
   }, [players, auction, setsFilter]);
@@ -580,34 +617,23 @@ export default function App() {
           <h1>Build your franchise.<br /><span>Win the auction.</span></h1>
           <p className="muted">Create a private room, select your team and bid live with friends.</p>
 
-          <div className="home-grid">
-            <form className="home-card" onSubmit={createRoom}>
-              <Crown size={24} />
-              <h2>Create room</h2>
-              <label>Room name</label>
-              <input value={roomName} onChange={e => setRoomName(e.target.value)} maxLength={60} />
-              <label>Your display name</label>
-              <input value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="Enter your name" maxLength={40} />
-              <button className="primary-button" disabled={busy}>
-                {busy ? "Creating..." : "Create Room"} <ArrowRight size={17} />
-              </button>
-            </form>
-
-            <form className="home-card" onSubmit={joinRoom}>
-              <Users size={24} />
-              <h2>Join room</h2>
-              <label>Room code</label>
-              <input value={roomCodeInput} onChange={e => setRoomCodeInput(e.target.value.toUpperCase())} placeholder="Enter room code" maxLength={8} />
-              <label>Your display name</label>
-              <input value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="Enter your name" maxLength={40} />
-              <label>Preferred franchise</label>
-              <select value={teamKey} onChange={e => setTeamKey(e.target.value)}>
-                {TEAMS.map(team => <option key={team.key} value={team.key}>{team.name}</option>)}
-              </select>
-              <button className="secondary-button" disabled={busy}>
-                {busy ? "Joining..." : "Join Room"} <ArrowRight size={17} />
-              </button>
-            </form>
+          <div className="home-entry">
+            <label htmlFor="display-name">Your name</label>
+            <input id="display-name" value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="Enter your name" maxLength={40} required />
+            <div className="home-grid home-grid-simple">
+              <form className="home-card home-card-simple" onSubmit={createRoom}>
+                <button className="primary-button" disabled={busy} type="submit">
+                  <Crown size={17} /> {busy ? "Creating..." : "Create Room"}
+                </button>
+              </form>
+              <form className="home-card home-card-simple" onSubmit={joinRoom}>
+                <label htmlFor="room-code">Join room code</label>
+                <input id="room-code" value={roomCodeInput} onChange={e => setRoomCodeInput(e.target.value.toUpperCase())} placeholder="Enter room code" maxLength={8} required />
+                <button className="secondary-button" disabled={busy} type="submit">
+                  <Users size={17} /> {busy ? "Joining..." : "Join Room"} <ArrowRight size={17} />
+                </button>
+              </form>
+            </div>
           </div>
         </section>
         {notice && <Notice message={notice} onClose={() => setNotice("")} />}
@@ -673,6 +699,12 @@ export default function App() {
           <span className="brand-mark"><Gavel size={19} /></span>
           <span>AUCTION<span className="gold">ROOM</span></span>
         </div>
+        {isHost && page === "auction" && (
+          <button className="top-pause-button" onClick={() => hostAction(auction.status === "paused" ? "resume" : "pause")} disabled={!['active', 'paused'].includes(auction.status)}>
+            {auction.status === "paused" ? <Play size={15} /> : <Pause size={15} />}
+            {auction.status === "paused" ? "Resume" : "Pause"}
+          </button>
+        )}
         <div className="room-info">
           <span className={`status-pill ${auction.status === "active" ? "active" : ""}`}>
             <i /> {String(auction.status || "waiting").toUpperCase()}
@@ -705,7 +737,7 @@ export default function App() {
             <div className="player-description">
               <span className="role-chip">{currentPlayer?.role || "Waiting for player"}</span>
               <h2>{currentPlayer?.name || "Waiting for the host"}</h2>
-              <p>{currentPlayer?.nationality || "Player details will appear here"}</p>
+              <p>{currentPlayer?.nationality && !/india|indian|local/i.test(currentPlayer.nationality) ? <>✈️ Overseas · {currentPlayer.nationality}</> : currentPlayer?.nationality || "Player details will appear here"}</p>
               <div className="base-price"><small>BASE PRICE</small><b>{currentPlayer?.base_price_paise ? money(currentPlayer.base_price_paise) : "—"}</b></div>
             </div>
           </article>
@@ -732,14 +764,7 @@ export default function App() {
             <div className="purse-summary"><Wallet size={15} /> Your purse <b>{money(myPurse?.remainingPursePaise ?? 120000000000)}</b></div>
             {isHost && (
               <div className="host-actions">
-                {auction.status === "active" ? (
-                  <button onClick={() => hostAction("pause")}><Pause size={14} /> Pause</button>
-                ) : (
-                  <button onClick={() => hostAction(auction.status === "paused" ? "resume" : "start")}>
-                    <Play size={14} /> {auction.status === "paused" ? "Resume" : "Start"}
-                  </button>
-                )}
-                <button disabled={!auction.highestBidder || !currentPlayer} onClick={() => hostAction("sell")}><Check size={14} /> Sold</button>
+                <button disabled={!auction.highestBidder || !currentPlayer || ["sold", "unsold", "ended"].includes(auction.status)} onClick={() => hostAction("sell")}><Check size={14} /> Sold</button>
                 <button disabled={!currentPlayer || ["sold", "unsold", "ended"].includes(auction.status)} onClick={() => hostAction("unsold")}>Unsold</button>
                 {["sold", "unsold"].includes(auction.status) && <button onClick={() => hostAction("next-player")}><ArrowRight size={14} /> Next player</button>}
               </div>
@@ -761,12 +786,20 @@ export default function App() {
           <div className="content-panel messages-panel">
             <header className="panel-header">
               <div><MessageCircle size={18} /><h2>Live Messages</h2></div>
-              <div className="sound-controls">
-                <button className="icon-button" title={soundOn ? "Mute sounds" : "Enable sounds"} onClick={() => setSoundOn(!soundOn)}>
+              <div className="sound-controls voice-controls">
+                <button className={`voice-join-button ${voiceJoined ? "connected" : ""}`} onClick={startVoice} title={voiceJoined ? "Leave voice chat" : "Join voice chat"}>
+                  <Radio size={15} /> {voiceJoined ? "Leave Voice" : "Join Voice"}
+                </button>
+                <button className="icon-button" title={soundOn ? "Turn auction sounds off" : "Turn auction sounds on"} aria-label={soundOn ? "Turn sound off" : "Turn sound on"} onClick={() => setSoundOn(v => !v)}>
                   {soundOn ? <Volume2 size={17} /> : <VolumeX size={17} />}
                 </button>
-                <button className="icon-button" title={micOn ? "Disable microphone" : "Enable microphone"} onClick={startVoice}>
-                  {micOn ? <Mic size={17} /> : <MicOff size={17} />}
+                <button className={`icon-button ${muted ? "control-off" : ""}`} title={muted ? "Turn microphone on" : "Mute microphone"} aria-label={muted ? "Turn microphone on" : "Mute microphone"} disabled={!voiceJoined} onClick={() => {
+                  const nextMuted = !muted;
+                  localStreamRef.current?.getAudioTracks().forEach(track => { track.enabled = !nextMuted; });
+                  setMuted(nextMuted);
+                  setNotice(nextMuted ? "Microphone muted" : "Microphone on");
+                }}>
+                  {muted || !micOn ? <MicOff size={17} /> : <Mic size={17} />}
                 </button>
               </div>
             </header>
@@ -833,7 +866,7 @@ export default function App() {
               {myTeam === xiTeam || isHost ? squads.filter(p => p.team_key === xiTeam).map(player => (
                 <label className="xi-player" key={player.id}>
                   <input type="checkbox" checked={selectedXI.some(p => Number(p.id) === Number(player.id))} onChange={() => toggleXI(player.id)} />
-                  <span><b>{player.name}</b><small>{player.role || "Role unavailable"}</small></span>
+                  <span className="xi-player-copy"><b>{player.name}</b><small>{player.role || "Role unavailable"}{player.nationality && !/india|indian|local/i.test(player.nationality) ? " · ✈️ Overseas" : ""}</small></span>
                   <strong>{money(player.purchase_price_paise)}</strong>
                 </label>
               )) : <p className="empty-state">You can edit your own team's Playing XI. The host can manage all teams.</p>}
@@ -846,6 +879,10 @@ export default function App() {
         {tab === "sets" && (
           <div className="content-panel">
             <header className="panel-header"><div><Layers size={18} /><h2>Auction Sets</h2></div></header>
+            <div className="set-progress-banner">
+              <div><small>NOW AUCTIONING</small><strong>{currentPlayer?.source_data?.set_name || currentPlayer?.source_data?.setName || (auction.currentSetNumber ? `Set ${auction.currentSetNumber}` : "Waiting for first set")}</strong></div>
+              <span>{auction.status === "ended" ? "Auction complete" : `${auction.soldCount || 0} sold · ${auction.unsoldCount || 0} unsold`}</span>
+            </div>
             <div className="sets-filters">
               {[
                 ["all", "All Sets"], ["current", "Current"], ["upcoming", "Upcoming"], ["completed", "Completed"]
@@ -856,10 +893,10 @@ export default function App() {
             <div className="sets-list">
               {currentSetStatus.map(group => (
                 <article className="set-card" key={`${group.number}-${group.name}`}>
-                  <div><b>{group.name}</b><small>{group.players.length} players</small></div>
-                  <span className={`set-status ${group.status}`}>{group.status}</span>
+                  <div className="set-card-heading"><b>{group.name}</b><small>{group.players.length} players · {group.soldCount} sold · {group.unsoldCount} unsold · {group.remainingCount} left</small></div>
+                  <span className={`set-status ${group.status}`}>{group.status === "completed" ? "✓ Completed" : group.status === "current" ? "● Current set" : "Upcoming"}</span>
                   <details><summary>View players</summary>
-                    {group.players.map(p => <p key={p.id}>{p.name} · {p.role || "Role unavailable"}</p>)}
+                    <div className="set-player-list">{group.players.map(p => <p key={p.id} className={p.unsold ? "set-player-unsold" : p.sold ? "set-player-sold" : ""}><span>{p.name} · {p.role || "Role unavailable"}</span><small>{p.unsold ? "UNSOLD" : p.sold ? "DONE" : "UPCOMING"}</small></p>)}</div>
                   </details>
                 </article>
               ))}
@@ -868,7 +905,8 @@ export default function App() {
             <h3>Unsold players</h3>
             {auction.unsoldPlayers?.length
               ? auction.unsoldPlayers.map(p => <span className="unsold-chip" key={p.id}>{p.name}</span>)
-              : <p className="muted">Unsold player list depends on backend state.</p>}
+              : players.filter(p => (auction.unsoldPlayerIds || []).map(Number).includes(Number(p.id))).map(p => <span className="unsold-chip" key={p.id}>{p.name}</span>)}
+            {!auction.unsoldPlayers?.length && !(auction.unsoldPlayerIds || []).length && <p className="muted">No unsold players yet.</p>}
           </div>
         )}
       </section>
