@@ -206,9 +206,14 @@ export default function App() {
       if (!targetSocketId || targetSocketId === socket.id || peersRef.current[targetSocketId]) return;
       const stream = localStreamRef.current;
       if (!stream) return;
-      const pc = new RTCPeerConnection({
-        iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
-      });
+      const iceServers = [{ urls: "stun:stun.l.google.com:19302" }];
+      const turnUrl = import.meta.env.VITE_TURN_URL;
+      const turnUsername = import.meta.env.VITE_TURN_USERNAME;
+      const turnCredential = import.meta.env.VITE_TURN_CREDENTIAL;
+      if (turnUrl && turnUsername && turnCredential) {
+        iceServers.push({ urls: turnUrl, username: turnUsername, credential: turnCredential });
+      }
+      const pc = new RTCPeerConnection({ iceServers });
       peersRef.current[targetSocketId] = pc;
       stream.getTracks().forEach(track => pc.addTrack(track, stream));
       pc.onicecandidate = event => {
@@ -302,7 +307,24 @@ export default function App() {
     });
     socket.on("chat:message", message => setMessages(old => [...old, message]));
     socket.on("presence:changed", () => loadRoomData(code));
-    socket.on("lobby:participants", list => { if (Array.isArray(list)) setParticipants(list); });
+    socket.on("lobby:participants", list => {
+      if (!Array.isArray(list)) return;
+      setParticipants(list);
+      const currentId = p.participantId || p.participant_id;
+      const self = list.find(item => (item.participant_id || item.participantId) === currentId);
+      if (self) {
+        setParticipant(old => old ? {
+          ...old,
+          teamKey: self.team_key || self.teamKey || null,
+          team_key: self.team_key || self.teamKey || null,
+          displayName: self.display_name || self.displayName || old.displayName,
+          display_name: self.display_name || self.displayName || old.display_name,
+          isHost: self.is_host ?? self.isHost ?? old.isHost,
+          is_host: self.is_host ?? self.isHost ?? old.is_host
+        } : old);
+        setTeamKey(self.team_key || self.teamKey || null);
+      }
+    });
 
     socket.on("sale:celebration", event => {
       const isUnsold = event?.status === "unsold";
@@ -443,7 +465,13 @@ export default function App() {
       const p = response.participant || {};
       setParticipant(old => ({ ...old, ...p, participantId, teamKey: key, team_key: key, displayName: p.display_name || p.displayName || old?.displayName || displayName }));
       setTeamKey(key);
-      if (response.participants) setParticipants(response.participants);
+      if (response.participants) {
+        setParticipants(response.participants);
+        const self = response.participants.find(item => (item.participant_id || item.participantId) === participantId);
+        if (self) setParticipant(old => ({ ...old, ...self, participantId, teamKey: key, team_key: key,
+          displayName: self.display_name || self.displayName || old?.displayName || displayName,
+          isHost: self.is_host ?? self.isHost ?? old?.isHost }));
+      }
       await loadRoomData(roomCode);
       setNotice(`Selected ${teamInfo(key)?.name}`);
     });
@@ -512,6 +540,11 @@ export default function App() {
   };
 
   const leaveRoom = () => {
+    if (voiceJoined) socketRef.current?.emit("voice:leave");
+    Object.values(peersRef.current).forEach(peer => peer.close());
+    peersRef.current = {};
+    pendingIceRef.current = {};
+    document.querySelectorAll('audio[id^="voice-audio-"]').forEach(audio => audio.remove());
     socketRef.current?.disconnect();
     socketRef.current = null;
     localStreamRef.current?.getTracks().forEach(track => track.stop());
@@ -526,6 +559,7 @@ export default function App() {
 
   const startVoice = async () => {
     if (voiceJoined) {
+      socketRef.current?.emit("voice:leave");
       Object.values(peersRef.current).forEach(peer => peer.close());
       peersRef.current = {};
       pendingIceRef.current = {};
