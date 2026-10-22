@@ -2325,3 +2325,95 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
   .auction-live .current-player-card { border-bottom:1px solid #2b2c31; }
   .auction-live .bid-clock { top:auto; }
 }
+
+/* === Midnight Blue broadcast UI — final compact viewport layout === */
+:root {
+  --bg: #020711;
+  --panel: #061326;
+  --panel2: #091a30;
+  --line: #16395f;
+  --text: #f3f7ff;
+  --muted: #93aaca;
+  --gold: #22b8ff;
+  --gold-dark: #087bff;
+  --blue: #087bff;
+  --blue-bright: #19baff;
+  --green: #00d6a0;
+  --red: #ff405b;
+}
+html, body, #root { background:#020711; }
+body { color:#f3f7ff; }
+.auction-app { background:linear-gradient(180deg,#020711 0%,#030b18 100%); color:#f3f7ff; }
+.auction-topbar, .participant-identity, .live-auction-panel, .current-player-card,
+.bidding-card, .content-panel, .squad-card, .set-card, .live-bid-ticker {
+  background:linear-gradient(145deg,#06162a 0%,#030b18 100%) !important;
+  border-color:#16395f !important;
+  box-shadow:0 8px 24px #0004;
+}
+.brand-mark, .icon-button, .code-button, .top-pause-button, .host-actions button {
+  background:#071a31 !important; border-color:#174574 !important; color:#a8cfff;
+}
+.home-brand .gold, .eyebrow, .ticker-label, .panel-header svg, .purse-summary svg,
+.next-bid-label b, .base-price b { color:#22b8ff !important; }
+.live-badge { background:#3a101d !important; border-color:#8c1d38 !important; color:#ff526b !important; }
+.auction-counts span:first-child b { color:#00d6a0 !important; }
+.auction-counts span:nth-child(2) b { color:#ff405b !important; }
+.auction-counts span:nth-child(3) b { color:#6bbaff !important; }
+.bid-now-button, .primary-button {
+  background:linear-gradient(105deg,#087bff,#0645d8) !important;
+  border:1px solid #168bff !important; color:#fff !important;
+  box-shadow:0 5px 18px #006dff35 !important;
+}
+.bid-now-button:disabled { background:#12243a !important; border-color:#203750 !important; color:#6d829b !important; box-shadow:none !important; }
+.bottom-nav { background:rgba(2,7,17,.97) !important; border-color:#16395f !important; }
+.bottom-nav button.active { color:#22b8ff !important; background:#071d36 !important; border-color:#087bff !important; }
+.message-mode-tabs, .message-mode-tabs button, .chat-form input, .feed-item, .squad-player,
+.set-player-list p { background:#061326 !important; border-color:#15395e !important; }
+.message-mode-tabs button.active { background:#09274a !important; border-color:#087bff !important; color:#3dc5ff !important; }
+.status-pill.active { color:#00d6a0 !important; background:#04291f !important; border-color:#075d47 !important; }
+.participant-team-pill { background:#071c34 !important; border-color:#174574 !important; color:#49c4ff !important; }
+
+/* Live mobile cockpit: auction 40%, vertical bid activity 10%, workspace 50%. */
+.live-bid-ticker { min-width:0; display:flex; align-items:stretch; gap:8px; min-height:0; padding:7px 10px; overflow:hidden; }
+.ticker-label { flex:0 0 70px; align-self:flex-start; padding-top:2px; font-size:9px; }
+.ticker-window { position:relative; min-width:0; min-height:0; flex:1; overflow:hidden; white-space:normal; }
+.ticker-track { display:flex; flex-direction:column; align-items:stretch; gap:5px; width:100%; animation:none; }
+.ticker-track-moving { animation:ticker-vertical 18s linear infinite; }
+.ticker-window:hover .ticker-track { animation-play-state:paused; }
+.ticker-item { display:flex; align-items:center; gap:7px; min-height:25px; color:#c5d8f2; font-size:10px; line-height:1.25; white-space:normal; }
+.ticker-team { flex:0 0 auto; min-width:27px; padding:4px 5px; border-radius:6px; background:color-mix(in srgb,var(--team-color) 18%,#061326); border:1px solid color-mix(in srgb,var(--team-color) 45%,#15395e); color:var(--team-color); font-size:9px; font-weight:900; text-align:center; }
+.ticker-copy { min-width:0; display:block; overflow-wrap:anywhere; }
+.ticker-copy b { color:#f4f8ff; }
+.ticker-copy strong { color:#24c1ff; }
+.ticker-empty { color:#8da5c5; }
+@keyframes ticker-vertical { from { transform:translateY(0); } to { transform:translateY(-50%); } }
+
+@media (max-width:700px) {
+  .auction-app.auction-live { height:100dvh; min-height:0; overflow:hidden; display:flex; flex-direction:column; gap:7px; padding:7px 10px calc(66px + env(safe-area-inset-bottom)); }
+  .auction-live .auction-topbar { flex:0 0 auto; }
+  .auction-live .participant-identity { flex:0 0 auto; }
+  .auction-live .live-auction-panel { flex:4 1 0; min-height:0; max-height:none; overflow:hidden; padding:9px; display:flex; flex-direction:column; }
+  .auction-live .live-panel-title { flex:0 0 auto; }
+  .auction-live .live-player-bidding { flex:1 1 auto; min-height:0; overflow:hidden; display:flex; flex-direction:column; gap:6px; }
+  .auction-live .current-player-card { flex:0 1 43%; min-height:0; overflow:hidden; }
+  .auction-live .bidding-card { position:relative; flex:1 1 57%; min-height:0; overflow:hidden; }
+  .auction-live .bid-clock { right:10px; top:8px; }
+  .auction-live .bid-values { padding-right:68px; }
+  .auction-live .host-team-summary { flex-wrap:wrap; }
+  .auction-live .live-bid-ticker { flex:1 1 0; min-height:0; max-height:none; padding:6px 8px; gap:6px; }
+  .auction-live .ticker-label { flex-basis:60px; font-size:8px; }
+  .auction-live .ticker-item { min-height:22px; font-size:9px; }
+  .auction-live .ticker-team { min-width:23px; padding:3px 4px; font-size:8px; }
+  .auction-live .lower-content { flex:5 1 0; min-height:0; overflow:hidden; padding:0; }
+  .auction-live .content-panel { height:100%; min-height:0; overflow:hidden; display:flex; flex-direction:column; padding:10px; border-radius:16px; }
+  .auction-live .panel-header { flex:0 0 auto; position:sticky; top:0; z-index:4; background:#061326 !important; }
+  .auction-live .message-mode-tabs { flex:0 0 auto; position:sticky; top:38px; z-index:3; }
+  .auction-live .message-feed { flex:1 1 auto; min-height:0; max-height:none; overflow-y:auto; overscroll-behavior:contain; }
+  .auction-live .chat-form { flex:0 0 auto; position:sticky; bottom:0; z-index:4; padding-top:7px; background:#061326 !important; }
+  .auction-live .squad-grid { overflow-y:auto; min-height:0; }
+  .auction-app.auction-ended { height:100dvh; min-height:0; overflow:hidden; display:flex; flex-direction:column; gap:7px; padding:7px 10px calc(66px + env(safe-area-inset-bottom)); }
+  .auction-ended .live-auction-panel, .auction-ended .live-bid-ticker { display:none !important; }
+  .auction-ended .lower-content { flex:1 1 auto; min-height:0; overflow:hidden; padding:0; }
+  .auction-ended .content-panel { height:100%; min-height:0; overflow:auto; }
+}
+@media (prefers-reduced-motion: reduce) { .ticker-track-moving { animation:none; } }
