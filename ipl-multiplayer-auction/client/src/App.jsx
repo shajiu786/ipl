@@ -54,6 +54,8 @@ function getError(error, fallback = "Something went wrong") {
 export default function App() {
   const [page, setPage] = useState("home");
   const [tab, setTab] = useState("messages");
+  const [messageMode, setMessageMode] = useState("bids");
+  const [bidConfirmOpen, setBidConfirmOpen] = useState(false);
 
   const [displayName, setDisplayName] = useState("");
   const [roomCodeInput, setRoomCodeInput] = useState("");
@@ -71,7 +73,6 @@ export default function App() {
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [remaining, setRemaining] = useState(0);
-  const [timerDuration, setTimerDuration] = useState(10);
   const [purses, setPurses] = useState([]);
   const [squads, setSquads] = useState([]);
   const [xi, setXi] = useState([]);
@@ -82,12 +83,14 @@ export default function App() {
   const [micOn, setMicOn] = useState(false);
   const [voiceJoined, setVoiceJoined] = useState(false);
   const [muted, setMuted] = useState(false);
+  const [sale, setSale] = useState(null);
 
   const socketRef = useRef(null);
   const audioRef = useRef(null);
   const localStreamRef = useRef(null);
   const peersRef = useRef({});
   const pendingIceRef = useRef({});
+  const saleTimerRef = useRef(null);
   const voiceSocketRef = useRef(null);
 
   const participantId = participant?.participantId || participant?.participant_id;
@@ -143,7 +146,6 @@ export default function App() {
 
       const nextRoom = roomR.data.room;
       setRoom(nextRoom);
-      setTimerDuration(Number(nextRoom.config?.durationSeconds) === 5 ? 5 : 10);
       setParticipants(roomR.data.participants || []);
       setAuction(nextRoom.state || { status: nextRoom.status, currentBidPaise: 0 });
       setBids(bidR.data.data || []);
@@ -305,31 +307,10 @@ export default function App() {
     socket.on("lobby:participants", list => { if (Array.isArray(list)) setParticipants(list); });
 
     socket.on("sale:celebration", event => {
-      const isUnsold = event?.status === "unsold";
-      const team = event?.teamName || teamInfo(event?.teamKey)?.name;
-      const detail = isUnsold
-        ? `${event?.playerName || "Player"} marked UNSOLD`
-        : `${event?.playerName || "Player"} SOLD to ${team || "winning franchise"} for ${money(event?.amountPaise || 0)}`;
-      setMessages(old => [{
-        id: `auction-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        display_name: "AUCTION UPDATE",
-        message: detail,
-        auctionEvent: isUnsold ? "unsold" : "sold",
-        team_key: event?.teamKey || event?.team_key || null,
-        created_at: new Date().toISOString()
-      }, ...old].slice(0, 100));
-      setTab("messages");
-      playTone(isUnsold ? 420 : 880);
-    });
-
-    socket.on("sale:skipped", event => {
-      setMessages(old => [{
-        id: `auction-skip-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        display_name: "AUCTION UPDATE",
-        message: `${event?.playerName || "Player"} skipped by host${event?.nextPlayerName ? ` · Next: ${event.nextPlayerName}` : " · Auction complete"}`,
-        auctionEvent: "skipped",
-        created_at: new Date().toISOString()
-      }, ...old].slice(0, 100));
+      setSale(event);
+      playTone(880);
+      clearTimeout(saleTimerRef.current);
+      saleTimerRef.current = setTimeout(() => setSale(null), 4500);
     });
 
     socket.on("connect_error", () => setNotice("Connection issue. Retrying…"));
@@ -343,6 +324,7 @@ export default function App() {
 
   useEffect(() => () => {
     socketRef.current?.disconnect();
+    clearTimeout(saleTimerRef.current);
     Object.values(peersRef.current).forEach(peer => peer.close());
     peersRef.current = {};
     document.querySelectorAll('audio[id^="voice-audio-"]').forEach(audio => audio.remove());
@@ -481,16 +463,7 @@ export default function App() {
 
     sendAction(action, payload, () => {
       if (action === "start" || action === "resume") setPage("auction");
-      if (action === "set-duration") {
-        const duration = Number(payload.durationSeconds) === 5 ? 5 : 10;
-        setTimerDuration(duration);
-        setRoom(old => old ? { ...old, config: { ...(old.config || {}), durationSeconds: duration } } : old);
-        setNotice(`Bid timer set to ${duration} seconds`);
-      } else if (action === "skip-player") {
-        setNotice("Player skipped");
-      } else {
-        setNotice(action === "start" ? "Auction started" : "Auction updated");
-      }
+      setNotice(action === "start" ? "Auction started" : "Auction updated");
     });
   };
 
@@ -611,8 +584,7 @@ export default function App() {
       groups.get(setNumber).players.push({
         ...player,
         sold: (state.soldPlayerIds || []).map(Number).includes(Number(player.id)),
-        unsold: (state.unsoldPlayerIds || []).map(Number).includes(Number(player.id)),
-        skipped: (state.skippedPlayerIds || []).map(Number).includes(Number(player.id))
+        unsold: (state.unsoldPlayerIds || []).map(Number).includes(Number(player.id))
       });
     });
 
@@ -627,7 +599,7 @@ export default function App() {
         unsoldCount: group.players.filter(p => p.unsold).length,
         remainingCount: group.players.filter(p => !doneIds.has(Number(p.id))).length
       };
-    }).filter(group => setsFilter === "all" || setsFilter === "unsold" || group.status === setsFilter);
+    }).filter(group => setsFilter === "all" || group.status === setsFilter);
   }, [players, auction, setsFilter]);
 
   if (page === "home") {
@@ -793,59 +765,24 @@ export default function App() {
             <p className="next-bid-label">Next valid bid <b>{money(nextBid)}</b></p>
             <button
               className="bid-now-button"
-              disabled={auction.status !== "active" || !currentPlayer || remaining <= 0 || myTeam === auction.highestBidder?.teamKey}
-              onClick={placeBid}
+              disabled={auction.status !== "active" || !currentPlayer || !myTeam || remaining <= 0 || myTeam === auction.highestBidder?.teamKey}
+              onClick={() => setBidConfirmOpen(true)}
             >
-              <Gavel size={19} /> BID NOW · {money(nextBid)}
+              <Gavel size={19} /> REVIEW BID · {money(nextBid)}
             </button>
-            <div className="purse-summary"><Wallet size={15} /> Your purse <b>{money(myPurse?.remainingPursePaise ?? 120000000000)}</b></div>
+            <div className="host-team-summary">
+              <div className="purse-summary"><Wallet size={15} /> Purse <b>{money(myPurse?.remainingPursePaise ?? 120000000000)}</b></div>
+              <div className="purse-summary"><Users size={15} /> Squad <b>{mySquad.length}/25 · {Math.max(0, 25 - mySquad.length)} slots</b></div>
+            </div>
             {isHost && (
-              <div className="host-actions host-auction-tools">
-                <label className="timer-choice">Bid timer
-                  <select aria-label="Choose bid timer" value={timerDuration} onChange={e => hostAction("set-duration", { durationSeconds: Number(e.target.value) })}>
-                    <option value={5}>5 seconds</option>
-                    <option value={10}>10 seconds</option>
-                  </select>
-                </label>
+              <div className="host-actions">
                 <button disabled={!auction.highestBidder || !currentPlayer || ["sold", "unsold", "ended"].includes(auction.status)} onClick={() => hostAction("sell")}><Check size={14} /> Sold</button>
                 <button disabled={!currentPlayer || ["sold", "unsold", "ended"].includes(auction.status)} onClick={() => hostAction("unsold")}>Unsold</button>
-                <button className="skip-player-button" disabled={!currentPlayer || ["sold", "unsold", "ended"].includes(auction.status)} onClick={() => {
-                  if (window.confirm(`Skip ${currentPlayer?.name || "this player"} and move to the next player?`)) hostAction("skip-player");
-                }}><ArrowRight size={14} /> Skip player</button>
                 {["sold", "unsold"].includes(auction.status) && <button onClick={() => hostAction("next-player")}><ArrowRight size={14} /> Next player</button>}
               </div>
             )}
           </article>
         </div>
-
-        <section className="live-activity-under-cards" aria-label="Live auction activity">
-          <header className="live-activity-under-cards-heading">
-            <span className="stream-heading-icon"><Gavel size={15} /></span>
-            <div><h3>Live Auction Activity</h3><p>Bids · Sold · Unsold · Skipped</p></div>
-          </header>
-          <div className="live-activity-under-cards-feed">
-
-                  {bids.map((bid, index) => {
-                    const team = teamInfo(bid.team_key);
-                    return <div className="feed-item bid-message" key={`bid-${bid.id || index}`} style={{ "--team-color": team?.color || "var(--green)" }}>
-                      <span className="feed-icon"><Gavel size={14} /></span>
-                      <div><b>{bid.display_name || bid.participant_id || "Bidder"}</b>
-                        <p>bid {money(bid.amount_paise)} · {bid.player_name || currentPlayer?.name || "Player"}</p>
-                      </div>
-                      <small>{team?.short || bid.team_key || ""}</small>
-                    </div>;
-                  })}
-                  {messages.filter(message => message.auctionEvent).map((message, index) => {
-                    const team = teamInfo(message.team_key || message.teamKey);
-                    return <div className={`feed-item auction-event-message ${message.auctionEvent}`} key={`auction-${message.id || index}`} style={{ "--team-color": team?.color || (message.auctionEvent === "unsold" ? "#ff6268" : "var(--gold)") }}>
-                      <span className="feed-icon"><Trophy size={14} /></span>
-                      <div><b>{message.display_name || "AUCTION UPDATE"}</b><p>{message.message}</p></div>
-                      <small>{message.created_at ? new Date(message.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}</small>
-                    </div>;
-                  })}
-                  {!bids.length && !messages.some(message => message.auctionEvent) && <p className="empty-state">Bids and auction results will appear here.</p>}
-          </div>
-        </section>
       </section>
 
       <nav className="bottom-nav">
@@ -879,29 +816,38 @@ export default function App() {
               </div>
             </header>
 
-            <div className="message-streams">
-              <section className="message-stream text-stream">
-                <header className="message-stream-heading">
-                  <span className="stream-heading-icon text-stream-icon"><MessageCircle size={15} /></span>
-                  <div><h3>Text Messages</h3><p>Chat with everyone in the room</p></div>
-                </header>
-                <div className="message-feed text-message-feed">
-                  {messages.filter(message => !message.auctionEvent).map((message, index) => (
-                    <div className="feed-item" key={`chat-${message.id || index}`}>
-                      <span className="feed-icon"><MessageCircle size={14} /></span>
-                      <div><b>{message.display_name || "Participant"}</b><p>{message.message}</p></div>
-                      <small>{message.created_at ? new Date(message.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}</small>
-                    </div>
-                  ))}
-                  {!messages.some(message => !message.auctionEvent) && <p className="empty-state">No text messages yet. Start the conversation!</p>}
-                </div>
-              </section>
+            <div className="message-mode-tabs" role="tablist" aria-label="Room messages">
+              <button type="button" role="tab" aria-selected={messageMode === "bids"} className={messageMode === "bids" ? "active" : ""} onClick={() => setMessageMode("bids")}><Gavel size={15} /> Live Bids <span>{bids.length}</span></button>
+              <button type="button" role="tab" aria-selected={messageMode === "chat"} className={messageMode === "chat" ? "active" : ""} onClick={() => setMessageMode("chat")}><MessageCircle size={15} /> Chat <span>{messages.length}</span></button>
             </div>
-
-            <form className="chat-form" onSubmit={sendChat}>
-              <input value={chatText} onChange={e => setChatText(e.target.value)} placeholder="Message the room…" maxLength={500} />
-              <button className="primary-button" type="submit"><Send size={16} /></button>
-            </form>
+            {messageMode === "bids" ? (
+              <div className="message-feed live-bids-feed" role="tabpanel">
+                {bids.map((bid, index) => {
+                  const bidTeam = teamInfo(bid.team_key);
+                  return <div className="feed-item bid-message" key={`bid-${bid.id || index}`} style={{ "--team-color": bidTeam?.color || "#EFC35D" }}>
+                    <span className="feed-icon"><Gavel size={14} /></span>
+                    <div><b>{bid.display_name || bid.participant_id || "Bidder"}</b><p>bid {money(bid.amount_paise)} · {bid.player_name || currentPlayer?.name || "Player"}</p></div>
+                    <small>{bidTeam?.short || bid.team_key || ""}</small>
+                  </div>;
+                })}
+                {!bids.length && <p className="empty-state">Live bids and auction results will appear here.</p>}
+              </div>
+            ) : (
+              <>
+                <div className="message-feed chat-only-feed" role="tabpanel">
+                  {messages.map((message, index) => <div className="feed-item" key={`msg-${message.id || index}`}>
+                    <span className="feed-icon"><MessageCircle size={14} /></span>
+                    <div><b>{message.display_name || "Participant"}</b><p>{message.message}</p></div>
+                    <small>{message.created_at ? new Date(message.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}</small>
+                  </div>)}
+                  {!messages.length && <p className="empty-state">No text messages yet. Start the conversation.</p>}
+                </div>
+                <form className="chat-form" onSubmit={sendChat}>
+                  <input value={chatText} onChange={e => setChatText(e.target.value)} placeholder="Message the room…" maxLength={500} />
+                  <button className="primary-button" type="submit" aria-label="Send message"><Send size={16} /></button>
+                </form>
+              </>
+            )}
           </div>
         )}
 
@@ -926,7 +872,7 @@ export default function App() {
         )}
 
         {tab === "xi" && auction.status === "ended" && (
-          <div className="content-panel xi-content-panel">
+          <div className="content-panel">
             <header className="panel-header"><div><ListOrdered size={18} /><h2>Playing XI Creator</h2></div></header>
             <div className="xi-controls">
               <label>Franchise
@@ -959,41 +905,60 @@ export default function App() {
             </div>
             <div className="sets-filters">
               {[
-                ["all", "All Sets"], ["current", "Current"], ["upcoming", "Upcoming"], ["completed", "Completed"], ["unsold", "Unsold"]
+                ["all", "All Sets"], ["current", "Current"], ["upcoming", "Upcoming"], ["completed", "Completed"]
               ].map(([key, label]) => (
                 <button key={key} className={setsFilter === key ? "active" : ""} onClick={() => setSetsFilter(key)}>{label}</button>
               ))}
             </div>
-            {setsFilter === "unsold" ? (
-              <section className="unsold-players-section unsold-filter-view" aria-label="Unsold players">
-                <div className="unsold-players-heading">
-                  <div><h3>Unsold players</h3><p className="muted">Players available for review</p></div>
-                  <span className="unsold-count">{auction.unsoldPlayers?.length || (auction.unsoldPlayerIds || []).length}</span>
-                </div>
-                <div className="unsold-player-list">
-                  {auction.unsoldPlayers?.length
-                    ? auction.unsoldPlayers.map(p => <div className="unsold-player-row" key={p.id}><span className="unsold-player-name">{p.name}</span><span className="unsold-player-status">UNSOLD</span></div>)
-                    : players.filter(p => (auction.unsoldPlayerIds || []).map(Number).includes(Number(p.id))).map(p => <div className="unsold-player-row" key={p.id}><span className="unsold-player-name">{p.name}</span><span className="unsold-player-status">UNSOLD</span></div>)}
-                  {!auction.unsoldPlayers?.length && !(auction.unsoldPlayerIds || []).length && <p className="muted unsold-empty">No unsold players yet.</p>}
-                </div>
-              </section>
-            ) : (
             <div className="sets-list">
               {currentSetStatus.map(group => (
                 <article className="set-card" key={`${group.number}-${group.name}`}>
                   <div className="set-card-heading"><b>{group.name}</b><small>{group.players.length} players · {group.soldCount} sold · {group.unsoldCount} unsold · {group.remainingCount} left</small></div>
                   <span className={`set-status ${group.status}`}>{group.status === "completed" ? "✓ Completed" : group.status === "current" ? "● Current set" : "Upcoming"}</span>
-                  <details open={group.status === "current"}><summary>View players · {group.players.length}</summary>
-                    <div className="set-player-list">{group.players.map(p => <p key={p.id} className={p.skipped ? "set-player-skipped" : p.unsold ? "set-player-unsold" : p.sold ? "set-player-sold" : ""}><span>{p.name}{p.nationality && !/india|indian|local/i.test(p.nationality) ? " ✈️" : ""} · {p.role || "Role unavailable"}</span><small>{p.skipped ? "SKIPPED" : p.unsold ? "UNSOLD" : p.sold ? "SOLD" : "UPCOMING"}</small></p>)}</div>
+                  <details open={auction.status === "ended" || group.status === "completed"}><summary>View players · {group.players.length}</summary>
+                    <div className="set-player-list">{group.players.map(p => <p key={p.id} className={p.unsold ? "set-player-unsold" : p.sold ? "set-player-sold" : ""}><span>{p.name}{p.nationality && !/india|indian|local/i.test(p.nationality) ? " ✈️" : ""} · {p.role || "Role unavailable"}</span><small>{p.unsold ? "UNSOLD" : p.sold ? "SOLD" : "UPCOMING"}</small></p>)}</div>
                   </details>
                 </article>
               ))}
               {!currentSetStatus.length && <p className="empty-state">No sets match this filter. Check that your player API includes set metadata.</p>}
             </div>
-            )}
+            <h3>Unsold players</h3>
+            {auction.unsoldPlayers?.length
+              ? auction.unsoldPlayers.map(p => <span className="unsold-chip" key={p.id}>{p.name}</span>)
+              : players.filter(p => (auction.unsoldPlayerIds || []).map(Number).includes(Number(p.id))).map(p => <span className="unsold-chip" key={p.id}>{p.name}</span>)}
+            {!auction.unsoldPlayers?.length && !(auction.unsoldPlayerIds || []).length && <p className="muted">No unsold players yet.</p>}
           </div>
         )}
       </section>
+
+      {bidConfirmOpen && (
+        <div className="bid-confirm-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setBidConfirmOpen(false); }}>
+          <section className="bid-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="bid-confirm-title">
+            <div className="bid-confirm-icon"><Gavel size={24} /></div>
+            <p className="eyebrow">CONFIRM YOUR BID</p>
+            <h2 id="bid-confirm-title">{currentPlayer?.name || "Current player"}</h2>
+            <p className="bid-confirm-copy">You are about to place the next valid bid for your selected team.</p>
+            <div className="bid-confirm-amount"><span>Bid amount</span><strong>{money(nextBid)}</strong></div>
+            <div className="bid-confirm-team"><span>{teamInfo(myTeam)?.short || "No team selected"}</span><small>Remaining purse after bid may change based on auction rules.</small></div>
+            <div className="bid-confirm-actions">
+              <button type="button" className="bid-cancel-button" onClick={() => setBidConfirmOpen(false)}>Cancel</button>
+              <button type="button" className="bid-confirm-button" onClick={() => { setBidConfirmOpen(false); placeBid(); }} disabled={auction.status !== "active" || !myTeam || remaining <= 0 || myTeam === auction.highestBidder?.teamKey}><Gavel size={16} /> Confirm bid</button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {sale && (
+        <div className={`sale-overlay sale-theme-${sale.teamKey || "default"}`}>
+          <div className="sale-card" style={{ "--team-color": teamInfo(sale.teamKey)?.color || "#D9A441" }}>
+            <Trophy size={40} />
+            <h2>SOLD!</h2>
+            <h3>{sale.playerName || "Player"}</h3>
+            <strong>{money(sale.amountPaise)}</strong>
+            <p>{teamInfo(sale.teamKey)?.name || sale.teamName || "Winning franchise"}</p>
+          </div>
+        </div>
+      )}
 
       {notice && <Notice message={notice} onClose={() => setNotice("")} />}
     </main>
