@@ -1746,3 +1746,47 @@ h3 {
   .message-stream .feed-item { padding: 8px 3px; }
   .messages-panel { min-height: 0; }
 }
+
+
+/* Layout update: live activity stays directly below the player/bid cards; chat stays separate. */
+.live-auction-panel {
+  flex: 0 0 auto; height: auto; max-height: none; min-height: 0; overflow: visible;
+}
+.live-player-bidding { flex: 0 0 auto; min-height: 220px; }
+.bidding-card { overflow: visible; display: flex; flex-direction: column; gap: 8px; align-self: stretch; }
+.bid-clock { align-items: center; justify-content: space-between; gap: 10px; min-height: 58px; }
+.bid-clock strong { flex: 0 0 auto; }
+.live-activity-under-cards {
+  display: flex; flex-direction: column; min-width: 0; min-height: 0; margin-top: 2px;
+  border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: #12151d;
+}
+.live-activity-under-cards-heading {
+  display: flex; align-items: center; gap: 9px; padding: 9px 12px;
+  border-bottom: 1px solid var(--line); background: #191d27;
+}
+.live-activity-under-cards-heading h3 { margin: 0; font-size: 12px; }
+.live-activity-under-cards-heading p { margin: 2px 0 0; font-size: 10px; color: var(--muted); }
+.live-activity-under-cards-feed { max-height: 150px; min-height: 62px; overflow-y: auto; padding: 4px 10px; overscroll-behavior: contain; }
+.live-activity-under-cards-feed .feed-item { display: flex; align-items: center; gap: 8px; padding: 8px 4px; min-width: 0; }
+.live-activity-under-cards-feed .feed-item > div { min-width: 0; flex: 1; }
+.live-activity-under-cards-feed .feed-item p { margin: 3px 0 0; overflow-wrap: anywhere; }
+.live-activity-under-cards-feed .bid-message { border-left: 3px solid var(--team-color, var(--green)); padding-left: 8px; }
+.live-activity-under-cards-feed .auction-event-message { border-left: 3px solid var(--team-color, var(--gold)); border-radius: 5px; }
+.live-activity-under-cards-feed .auction-event-message.sold { border-color: var(--team-color, var(--green)); }
+.sets-content-panel .sets-list, .sets-content-panel .unsold-filter-view { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.sets-content-panel .unsold-filter-view { margin-top: 0; }
+.sets-content-panel .sets-filters button { min-height: 38px; }
+.messages-panel .message-streams { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+.messages-panel .text-stream { min-height: 220px; }
+.messages-panel .chat-form { flex: 0 0 auto; }
+@media (max-width: 680px) {
+  .live-auction-panel { padding: 10px; gap: 8px; }
+  .live-player-bidding { min-height: 300px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .bidding-card { overflow: visible; }
+  .bid-clock { min-height: 48px; padding: 7px 8px; }
+  .bid-clock span { font-size: 8px; }
+  .bid-clock strong { font-size: 22px; }
+  .live-activity-under-cards-feed { max-height: 130px; }
+  .sets-content-panel .sets-filters { gap: 6px; }
+  .sets-content-panel .sets-filters button { padding: 8px 10px; }
+}
