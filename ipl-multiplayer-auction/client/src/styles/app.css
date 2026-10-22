@@ -1509,3 +1509,45 @@ h3 {
   .participant-identity-copy strong { font-size: 11px; }
   .participant-team-pill { padding: 6px 7px; font-size: 9px; white-space: normal; text-align: center; }
 }
+
+
+/* Version 5: reliable scrolling for the complete set inventory. */
+.sets-content-panel {
+  overflow-y: auto !important;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  min-height: 0;
+  height: 100%;
+  -webkit-overflow-scrolling: touch;
+}
+.sets-content-panel .sets-list { min-height: 0; overflow: visible; padding-bottom: 12px; }
+.sets-content-panel .set-card details[open] .set-player-list { max-height: 420px; overflow-y: auto; overscroll-behavior: contain; }
+.sets-content-panel .set-player-list { min-width: 0; }
+.topbar-actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.end-auction-button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: 36px; padding: 8px 11px; border: 1px solid #e64c5466; border-radius: 9px;
+  color: #ff9a9f; background: #e64c5418; font-size: 11px; font-weight: 850; cursor: pointer;
+}
+.end-auction-button:hover { background: #e64c5430; border-color: #e64c54; }
+.sale-overlay { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 20px; background: #05070bdc; animation: sale-backdrop-in .25s ease-out; }
+.sale-card {
+  width: min(100%, 420px); padding: 32px 24px; text-align: center; border-radius: 22px;
+  border: 2px solid var(--team-color); background: linear-gradient(145deg, color-mix(in srgb, var(--team-color) 24%, #11141c), #11141c 68%);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--team-color) 30%, transparent), 0 0 65px color-mix(in srgb, var(--team-color) 45%, transparent);
+  animation: sale-card-pop .48s cubic-bezier(.18,.89,.32,1.28) both;
+}
+.sale-card svg { color: var(--team-color); filter: drop-shadow(0 0 12px color-mix(in srgb, var(--team-color) 70%, transparent)); }
+.sale-card h2 { color: var(--team-color); font-size: clamp(32px, 7vw, 48px); letter-spacing: .08em; margin: 12px 0; }
+.sale-card h3 { font-size: 21px; margin: 8px 0; }
+.sale-card strong { display: inline-block; margin: 8px 0; font-size: 24px; }
+.sale-card p { color: var(--team-color); font-weight: 900; }
+@keyframes sale-backdrop-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes sale-card-pop { from { opacity: 0; transform: translateY(18px) scale(.82); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@media (max-width: 680px) {
+  .topbar-actions { gap: 5px; }
+  .end-auction-button { min-height: 31px; padding: 6px 7px; font-size: 9px; }
+  .end-auction-button svg { width: 12px; }
+  .sets-content-panel { padding: 10px; }
+}
