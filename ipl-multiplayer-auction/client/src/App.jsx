@@ -88,6 +88,7 @@ export default function App() {
   const localStreamRef = useRef(null);
   const peersRef = useRef({});
   const saleTimerRef = useRef(null);
+  const voiceSocketRef = useRef(null);
 
   const participantId = participant?.participantId || participant?.participant_id;
   const isHost = Boolean(participant?.isHost || participant?.is_host);
@@ -197,6 +198,84 @@ export default function App() {
       });
     });
 
+    const sendVoiceSignal = (targetSocketId, signal) => {
+      socket.emit("voice:signal", { targetSocketId, signal });
+    };
+    const createVoicePeer = async (targetSocketId, shouldOffer = false) => {
+      if (!targetSocketId || targetSocketId === socket.id || peersRef.current[targetSocketId]) return;
+      const stream = localStreamRef.current;
+      if (!stream) return;
+      const pc = new RTCPeerConnection({
+        iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+      });
+      peersRef.current[targetSocketId] = pc;
+      stream.getTracks().forEach(track => pc.addTrack(track, stream));
+      pc.onicecandidate = event => {
+        if (event.candidate) sendVoiceSignal(targetSocketId, { candidate: event.candidate });
+      };
+      pc.ontrack = event => {
+        let audio = document.getElementById(`voice-audio-${targetSocketId}`);
+        if (!audio) {
+          audio = document.createElement("audio");
+          audio.id = `voice-audio-${targetSocketId}`;
+          audio.autoplay = true;
+          audio.playsInline = true;
+          audio.style.display = "none";
+          document.body.appendChild(audio);
+        }
+        audio.srcObject = event.streams[0];
+        audio.play().catch(() => setNotice("Tap the page once to allow incoming voice audio."));
+      };
+      pc.onconnectionstatechange = () => {
+        if (["failed", "closed", "disconnected"].includes(pc.connectionState)) {
+          pc.close();
+          delete peersRef.current[targetSocketId];
+        }
+      };
+      if (shouldOffer) {
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        sendVoiceSignal(targetSocketId, { description: pc.localDescription });
+      }
+    };
+    socket.on("voice:peers", async peerList => {
+      if (!localStreamRef.current) return;
+      for (const peer of peerList || []) {
+        try { await createVoicePeer(peer.socketId, socket.id < peer.socketId); } catch {}
+      }
+    });
+    socket.on("voice:peer-joined", async ({ socketId: peerId } = {}) => {
+      if (localStreamRef.current) {
+        try { await createVoicePeer(peerId, socket.id < peerId); } catch {}
+      }
+    });
+    socket.on("voice:signal", async ({ from, signal } = {}) => {
+      if (!from || !signal || !localStreamRef.current) return;
+      try {
+        let pc = peersRef.current[from];
+        if (!pc) {
+          await createVoicePeer(from, false);
+          pc = peersRef.current[from];
+        }
+        if (!pc) return;
+        if (signal.description) {
+          await pc.setRemoteDescription(new RTCSessionDescription(signal.description));
+          if (signal.description.type === "offer") {
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            sendVoiceSignal(from, { description: pc.localDescription });
+          }
+        } else if (signal.candidate) {
+          await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+        }
+      } catch (error) { console.error("Voice signaling failed", error); }
+    });
+    socket.on("voice:peer-left", ({ socketId: peerId } = {}) => {
+      peersRef.current[peerId]?.close();
+      delete peersRef.current[peerId];
+      document.getElementById(`voice-audio-${peerId}`)?.remove();
+    });
+
     socket.on("auction:state", state => {
       setAuction(state);
       // When the host starts the auction, every participant leaves the lobby.
@@ -228,6 +307,8 @@ export default function App() {
     socketRef.current?.disconnect();
     clearTimeout(saleTimerRef.current);
     Object.values(peersRef.current).forEach(peer => peer.close());
+    peersRef.current = {};
+    document.querySelectorAll('audio[id^="voice-audio-"]').forEach(audio => audio.remove());
     localStreamRef.current?.getTracks().forEach(track => track.stop());
   }, []);
 
@@ -408,17 +489,26 @@ export default function App() {
   const startVoice = async () => {
     try {
       if (micOn) {
+        Object.values(peersRef.current).forEach(peer => peer.close());
+        peersRef.current = {};
+        document.querySelectorAll('audio[id^="voice-audio-"]').forEach(audio => audio.remove());
         localStreamRef.current?.getTracks().forEach(track => track.stop());
         localStreamRef.current = null;
         setMicOn(false);
+        setNotice("Voice chat disconnected.");
         return;
       }
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setNotice("Voice chat requires HTTPS and a browser with microphone support.");
+        return;
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true }, video: false });
       localStreamRef.current = stream;
       setMicOn(true);
-      setNotice("Microphone enabled. Full peer audio requires WebRTC signaling for all room participants.");
-    } catch {
-      setNotice("Microphone access denied or unavailable.");
+      socketRef.current?.emit("voice:join");
+      setNotice("Voice chat connected. Other participants must also enable their microphones.");
+    } catch (error) {
+      setNotice(error?.name === "NotAllowedError" ? "Allow microphone permission in your browser settings." : "Microphone unavailable. Use HTTPS and check your audio device.");
     }
   };
 
@@ -642,13 +732,16 @@ export default function App() {
             <div className="purse-summary"><Wallet size={15} /> Your purse <b>{money(myPurse?.remainingPursePaise ?? 120000000000)}</b></div>
             {isHost && (
               <div className="host-actions">
-                <button onClick={() => hostAction(auction.status === "active" ? "pause" : "start")}>
-                  {auction.status === "active" ? <Pause size={14} /> : <Play size={14} />}
-                  {auction.status === "active" ? "Pause" : "Start"}
-                </button>
-                <button onClick={() => hostAction("sell")}><Check size={14} /> Sold</button>
-                <button onClick={() => hostAction("unsold")}>Unsold</button>
-                <button onClick={() => hostAction("resume")}>Resume</button>
+                {auction.status === "active" ? (
+                  <button onClick={() => hostAction("pause")}><Pause size={14} /> Pause</button>
+                ) : (
+                  <button onClick={() => hostAction(auction.status === "paused" ? "resume" : "start")}>
+                    <Play size={14} /> {auction.status === "paused" ? "Resume" : "Start"}
+                  </button>
+                )}
+                <button disabled={!auction.highestBidder || !currentPlayer} onClick={() => hostAction("sell")}><Check size={14} /> Sold</button>
+                <button disabled={!currentPlayer || ["sold", "unsold", "ended"].includes(auction.status)} onClick={() => hostAction("unsold")}>Unsold</button>
+                {["sold", "unsold"].includes(auction.status) && <button onClick={() => hostAction("next-player")}><ArrowRight size={14} /> Next player</button>}
               </div>
             )}
           </article>
