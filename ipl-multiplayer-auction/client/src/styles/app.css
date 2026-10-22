@@ -1626,3 +1626,20 @@ h3 {
   .sets-content-panel .set-card { grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 11px; }
   .sets-content-panel .set-status { justify-self: start; }
 }
+
+
+/* Host auction tools: compact timer selector and explicit skip action. */
+.host-auction-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+.timer-choice { display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); font-size: 10px; font-weight: 800; }
+.timer-choice select { max-width: 110px; border: 0; outline: 0; color: var(--text); background: #171b24; font: inherit; cursor: pointer; }
+.host-auction-tools .skip-player-button { border-color: #e6b64b66; color: #f3d17b; }
+.host-auction-tools .skip-player-button:hover:not(:disabled) { background: #edbd5918; }
+.set-player-skipped small { color: #d6b8ff !important; }
+.auction-event-message.skipped { border-color: #b79aff55; background: #b79aff0c; }
+.auction-event-message.skipped .feed-icon { color: #c3a6ff; }
+@media (max-width: 680px) {
+  .host-auction-tools { align-items: stretch; }
+  .timer-choice { flex: 1 1 100%; justify-content: space-between; }
+  .timer-choice select { max-width: 55%; }
+  .host-auction-tools > button { flex: 1 1 auto; }
+}
