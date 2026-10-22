@@ -962,4 +962,4 @@ function Notice({ message, onClose }) {
       <button onClick={onClose} aria-label="Dismiss"><X size={15} /></button>
     </div>
   );
-}
+}   
