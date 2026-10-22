@@ -422,5 +422,5 @@ export function registerSockets(io, pool) {
         try { await pool.query('UPDATE room_participants SET connected=false WHERE room_id=$1 AND participant_id=$2',[socket.data.roomId,socket.data.participantId]); socket.to(socket.data.roomCode).emit('presence:changed',{participantId:socket.data.participantId,connected:false}); socket.to(socket.data.roomCode).emit('voice:peer-left',{socketId:socket.id}); } catch {}
       }
     });
-  });
+  }); 
 }
