@@ -627,7 +627,7 @@ export default function App() {
         unsoldCount: group.players.filter(p => p.unsold).length,
         remainingCount: group.players.filter(p => !doneIds.has(Number(p.id))).length
       };
-    }).filter(group => setsFilter === "all" || group.status === setsFilter);
+    }).filter(group => setsFilter === "all" || setsFilter === "unsold" || group.status === setsFilter);
   }, [players, auction, setsFilter]);
 
   if (page === "home") {
@@ -817,6 +817,35 @@ export default function App() {
             )}
           </article>
         </div>
+
+        <section className="live-activity-under-cards" aria-label="Live auction activity">
+          <header className="live-activity-under-cards-heading">
+            <span className="stream-heading-icon"><Gavel size={15} /></span>
+            <div><h3>Live Auction Activity</h3><p>Bids · Sold · Unsold · Skipped</p></div>
+          </header>
+          <div className="live-activity-under-cards-feed">
+
+                  {bids.map((bid, index) => {
+                    const team = teamInfo(bid.team_key);
+                    return <div className="feed-item bid-message" key={`bid-${bid.id || index}`} style={{ "--team-color": team?.color || "var(--green)" }}>
+                      <span className="feed-icon"><Gavel size={14} /></span>
+                      <div><b>{bid.display_name || bid.participant_id || "Bidder"}</b>
+                        <p>bid {money(bid.amount_paise)} · {bid.player_name || currentPlayer?.name || "Player"}</p>
+                      </div>
+                      <small>{team?.short || bid.team_key || ""}</small>
+                    </div>;
+                  })}
+                  {messages.filter(message => message.auctionEvent).map((message, index) => {
+                    const team = teamInfo(message.team_key || message.teamKey);
+                    return <div className={`feed-item auction-event-message ${message.auctionEvent}`} key={`auction-${message.id || index}`} style={{ "--team-color": team?.color || (message.auctionEvent === "unsold" ? "#ff6268" : "var(--gold)") }}>
+                      <span className="feed-icon"><Trophy size={14} /></span>
+                      <div><b>{message.display_name || "AUCTION UPDATE"}</b><p>{message.message}</p></div>
+                      <small>{message.created_at ? new Date(message.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}</small>
+                    </div>;
+                  })}
+                  {!bids.length && !messages.some(message => message.auctionEvent) && <p className="empty-state">Bids and auction results will appear here.</p>}
+          </div>
+        </section>
       </section>
 
       <nav className="bottom-nav">
@@ -851,34 +880,6 @@ export default function App() {
             </header>
 
             <div className="message-streams">
-              <section className="message-stream activity-stream">
-                <header className="message-stream-heading">
-                  <span className="stream-heading-icon"><Gavel size={15} /></span>
-                  <div><h3>Live Auction Activity</h3><p>Bids · Sold · Unsold · Skipped</p></div>
-                </header>
-                <div className="message-feed activity-feed">
-                  {bids.map((bid, index) => {
-                    const team = teamInfo(bid.team_key);
-                    return <div className="feed-item bid-message" key={`bid-${bid.id || index}`} style={{ "--team-color": team?.color || "var(--green)" }}>
-                      <span className="feed-icon"><Gavel size={14} /></span>
-                      <div><b>{bid.display_name || bid.participant_id || "Bidder"}</b>
-                        <p>bid {money(bid.amount_paise)} · {bid.player_name || currentPlayer?.name || "Player"}</p>
-                      </div>
-                      <small>{team?.short || bid.team_key || ""}</small>
-                    </div>;
-                  })}
-                  {messages.filter(message => message.auctionEvent).map((message, index) => {
-                    const team = teamInfo(message.team_key || message.teamKey);
-                    return <div className={`feed-item auction-event-message ${message.auctionEvent}`} key={`auction-${message.id || index}`} style={{ "--team-color": team?.color || (message.auctionEvent === "unsold" ? "#ff6268" : "var(--gold)") }}>
-                      <span className="feed-icon"><Trophy size={14} /></span>
-                      <div><b>{message.display_name || "AUCTION UPDATE"}</b><p>{message.message}</p></div>
-                      <small>{message.created_at ? new Date(message.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}</small>
-                    </div>;
-                  })}
-                  {!bids.length && !messages.some(message => message.auctionEvent) && <p className="empty-state">Bids and auction results will appear here.</p>}
-                </div>
-              </section>
-
               <section className="message-stream text-stream">
                 <header className="message-stream-heading">
                   <span className="stream-heading-icon text-stream-icon"><MessageCircle size={15} /></span>
@@ -958,11 +959,25 @@ export default function App() {
             </div>
             <div className="sets-filters">
               {[
-                ["all", "All Sets"], ["current", "Current"], ["upcoming", "Upcoming"], ["completed", "Completed"]
+                ["all", "All Sets"], ["current", "Current"], ["upcoming", "Upcoming"], ["completed", "Completed"], ["unsold", "Unsold"]
               ].map(([key, label]) => (
                 <button key={key} className={setsFilter === key ? "active" : ""} onClick={() => setSetsFilter(key)}>{label}</button>
               ))}
             </div>
+            {setsFilter === "unsold" ? (
+              <section className="unsold-players-section unsold-filter-view" aria-label="Unsold players">
+                <div className="unsold-players-heading">
+                  <div><h3>Unsold players</h3><p className="muted">Players available for review</p></div>
+                  <span className="unsold-count">{auction.unsoldPlayers?.length || (auction.unsoldPlayerIds || []).length}</span>
+                </div>
+                <div className="unsold-player-list">
+                  {auction.unsoldPlayers?.length
+                    ? auction.unsoldPlayers.map(p => <div className="unsold-player-row" key={p.id}><span className="unsold-player-name">{p.name}</span><span className="unsold-player-status">UNSOLD</span></div>)
+                    : players.filter(p => (auction.unsoldPlayerIds || []).map(Number).includes(Number(p.id))).map(p => <div className="unsold-player-row" key={p.id}><span className="unsold-player-name">{p.name}</span><span className="unsold-player-status">UNSOLD</span></div>)}
+                  {!auction.unsoldPlayers?.length && !(auction.unsoldPlayerIds || []).length && <p className="muted unsold-empty">No unsold players yet.</p>}
+                </div>
+              </section>
+            ) : (
             <div className="sets-list">
               {currentSetStatus.map(group => (
                 <article className="set-card" key={`${group.number}-${group.name}`}>
@@ -975,18 +990,7 @@ export default function App() {
               ))}
               {!currentSetStatus.length && <p className="empty-state">No sets match this filter. Check that your player API includes set metadata.</p>}
             </div>
-            <section className="unsold-players-section" aria-label="Unsold players">
-              <div className="unsold-players-heading">
-                <div><h3>Unsold players</h3><p className="muted">Players who can be reviewed later</p></div>
-                <span className="unsold-count">{auction.unsoldPlayers?.length || (auction.unsoldPlayerIds || []).length}</span>
-              </div>
-              <div className="unsold-player-list">
-                {auction.unsoldPlayers?.length
-                  ? auction.unsoldPlayers.map(p => <div className="unsold-player-row" key={p.id}><span className="unsold-player-name">{p.name}</span><span className="unsold-player-status">UNSOLD</span></div>)
-                  : players.filter(p => (auction.unsoldPlayerIds || []).map(Number).includes(Number(p.id))).map(p => <div className="unsold-player-row" key={p.id}><span className="unsold-player-name">{p.name}</span><span className="unsold-player-status">UNSOLD</span></div>)}
-                {!auction.unsoldPlayers?.length && !(auction.unsoldPlayerIds || []).length && <p className="muted unsold-empty">No unsold players yet.</p>}
-              </div>
-            </section>
+            )}
           </div>
         )}
       </section>
