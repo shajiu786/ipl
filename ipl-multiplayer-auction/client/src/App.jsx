@@ -718,6 +718,12 @@ export default function App() {
         <button className="icon-button" onClick={leaveRoom} aria-label="Leave room"><X /></button>
       </header>
 
+      <div className="participant-identity" aria-label="Your auction participant identity">
+        <span className="participant-avatar">{(participant?.displayName || participant?.display_name || displayName || "P").trim().charAt(0).toUpperCase()}</span>
+        <span className="participant-identity-copy"><small>YOU ARE PLAYING AS</small><strong>{participant?.displayName || participant?.display_name || displayName || "Participant"}</strong></span>
+        <span className="participant-team-pill">{teamInfo(myTeam)?.short || "Select a team in lobby"}</span>
+      </div>
+
       <section className="live-auction-panel">
         <div className="live-panel-title">
           <div>
@@ -774,7 +780,7 @@ export default function App() {
       </section>
 
       <nav className="bottom-nav">
-        {NAV.map(({ id, label, Icon }) => (
+        {NAV.filter(({ id }) => id !== "xi" || auction.status === "ended").map(({ id, label, Icon }) => (
           <button key={id} className={tab === id ? "active" : ""} onClick={() => setTab(id)}>
             <Icon size={18} /><span>{label}</span>
           </button>
@@ -851,7 +857,7 @@ export default function App() {
           </div>
         )}
 
-        {tab === "xi" && (
+        {tab === "xi" && auction.status === "ended" && (
           <div className="content-panel">
             <header className="panel-header"><div><ListOrdered size={18} /><h2>Playing XI Creator</h2></div></header>
             <div className="xi-controls">
