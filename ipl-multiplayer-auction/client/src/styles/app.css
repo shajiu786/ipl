@@ -1073,3 +1073,217 @@ h3 {
   justify-content: space-between;
   gap: 10
 }
+
+/* PATCH: compact auction controls, mobile-safe timer and panel sizing */
+.live-auction-panel {
+  flex: 0 0 34%;
+  height: 34%;
+  min-height: 250px;
+  max-height: 370px;
+  overflow: hidden;
+}
+
+.live-player-bidding,
+.current-player-card,
+.bidding-card,
+.player-description,
+.bid-clock,
+.bid-values > div {
+  min-width: 0;
+}
+
+.bidding-card {
+  overflow: hidden;
+}
+
+.host-actions {
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.host-actions button {
+  min-height: 30px;
+  white-space: nowrap;
+  transition: background .15s ease, border-color .15s ease, transform .15s ease;
+}
+
+.host-actions button:hover:not(:disabled) {
+  border-color: var(--gold);
+  transform: translateY(-1px);
+}
+
+.host-actions button:disabled {
+  opacity: .35;
+  cursor: not-allowed;
+}
+
+.lower-content {
+  min-height: 0;
+}
+
+@media (max-width: 680px) {
+  .auction-topbar {
+    flex-basis: 50px;
+    gap: 7px;
+    padding: 5px 9px;
+  }
+
+  .auction-topbar .home-brand {
+    gap: 6px;
+    font-size: 10px;
+  }
+
+  .auction-topbar .brand-mark {
+    width: 31px;
+    height: 31px;
+  }
+
+  .room-info {
+    justify-content: flex-end;
+    gap: 6px;
+  }
+
+  .room-info > b {
+    display: none;
+  }
+
+  .live-auction-panel {
+    flex: 0 0 34%;
+    height: 34%;
+    min-height: 280px;
+    max-height: 355px;
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .live-panel-title {
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .live-panel-title .eyebrow {
+    font-size: 9px;
+    letter-spacing: .1em;
+  }
+
+  .live-panel-title h1 {
+    font-size: 20px;
+    gap: 6px;
+  }
+
+  .auction-counts {
+    gap: 9px;
+  }
+
+  .auction-counts b {
+    font-size: 17px;
+  }
+
+  .auction-counts small {
+    font-size: 8px;
+  }
+
+  .live-player-bidding {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .current-player-card,
+  .bidding-card {
+    padding: 8px;
+    gap: 7px;
+  }
+
+  .current-player-card {
+    align-items: center;
+    gap: 8px;
+  }
+
+  .player-placeholder {
+    flex: 0 0 58px;
+    width: 58px;
+    height: 68px;
+  }
+
+  .player-placeholder svg {
+    width: 25px;
+  }
+
+  .player-placeholder small {
+    font-size: 6px;
+    text-align: center;
+  }
+
+  .player-description h2 {
+    font-size: 16px;
+    line-height: 1.15;
+    overflow-wrap: anywhere;
+  }
+
+  .player-description p {
+    font-size: 10px;
+    margin-bottom: 5px;
+  }
+
+  .base-price b {
+    font-size: 12px;
+  }
+
+  .bid-clock {
+    align-items: flex-start;
+  }
+
+  .bid-clock strong {
+    font-size: 22px;
+  }
+
+  .bid-values {
+    gap: 5px;
+  }
+
+  .bid-values b {
+    font-size: 12px;
+  }
+
+  .next-bid-label {
+    font-size: 9px;
+  }
+
+  .next-bid-label b {
+    font-size: 11px;
+  }
+
+  .bid-now-button {
+    min-height: 38px;
+    font-size: 10px;
+    gap: 4px;
+  }
+
+  .purse-summary {
+    font-size: 9px;
+  }
+
+  .host-actions {
+    gap: 4px;
+  }
+
+  .host-actions button {
+    padding: 5px 6px;
+    font-size: 9px;
+  }
+
+  .bottom-nav {
+    flex-basis: 58px;
+    padding: 5px 8px;
+  }
+
+  .bottom-nav button {
+    font-size: 9px;
+  }
+}
+
+@media (max-height: 740px) and (min-width: 681px) {
+  .live-auction-panel {
+    min-height: 220px;
+  }
+}
