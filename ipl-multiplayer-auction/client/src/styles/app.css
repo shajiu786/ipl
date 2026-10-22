@@ -1682,3 +1682,35 @@ h3 {
   .bid-confirm-dialog h2 { font-size: 20px; }
   .bid-confirm-amount strong { font-size: 22px; }
 }
+
+
+/* Sold / unsold feedback lives in Live Messages, never as a blocking overlay. */
+.auction-event-message {
+  border: 1px solid #edbd5940;
+  border-radius: 10px;
+  margin: 5px 0;
+  background: #edbd590c;
+  animation: auction-message-flash .8s ease-out both;
+}
+.auction-event-message .feed-icon { color: var(--gold); }
+.auction-event-message.sold { border-color: #63d6a155; background: #63d6a10c; }
+.auction-event-message.sold .feed-icon { color: var(--green); background: #63d6a118; }
+.auction-event-message.unsold { border-color: #ff626855; background: #ff62680c; }
+.auction-event-message.unsold .feed-icon { color: var(--red); background: #ff626812; }
+.auction-event-message b { font-size: 10px; letter-spacing: .07em; }
+.auction-event-message p { font-weight: 750; }
+@keyframes auction-message-flash {
+  0% { opacity: .35; transform: translateY(4px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+@media (max-width: 680px) {
+  .xi-content-panel { padding: 10px; }
+  .xi-controls { align-items: stretch; flex-direction: column; }
+  .xi-controls label { width: 100%; }
+  .sets-content-panel .set-progress-banner { align-items: flex-start; flex-direction: column; gap: 7px; }
+  .sets-content-panel .set-progress-banner > span { text-align: left; }
+  .sets-content-panel .set-card { grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 11px; }
+  .sets-content-panel .set-status { justify-self: start; }
+}
+
+
