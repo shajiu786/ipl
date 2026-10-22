@@ -810,23 +810,14 @@ export default function App() {
         <section className="live-bid-ticker" aria-label="Latest live bidding activity">
           <span className="ticker-label"><i /> LIVE BIDS</span>
           <div className="ticker-window">
-            <div className={`ticker-track ${bids.length > 1 ? "ticker-track-moving" : ""}`}>
-              {(bids.length ? [...bids].slice(0, 6) : []).map((bid, index) => {
-                const bidTeam = teamInfo(bid.team_key);
-                return <div className="ticker-item" key={`ticker-a-${bid.id || index}`}>
-                  <span className="ticker-team" style={{ "--team-color": bidTeam?.color || "#168BFF" }}>{bidTeam?.short || bid.team_key || "BID"}</span>
-                  <span className="ticker-copy"><b>{bid.display_name || bidTeam?.name || "Bidder"}</b> bid <strong>{money(bid.amount_paise)}</strong> for {bid.player_name || currentPlayer?.name || "Player"}</span>
-                </div>;
-              })}
-              {bids.length > 1 && [...bids].slice(0, 6).map((bid, index) => {
-                const bidTeam = teamInfo(bid.team_key);
-                return <div className="ticker-item" key={`ticker-b-${bid.id || index}`} aria-hidden="true">
-                  <span className="ticker-team" style={{ "--team-color": bidTeam?.color || "#168BFF" }}>{bidTeam?.short || bid.team_key || "BID"}</span>
-                  <span className="ticker-copy"><b>{bid.display_name || bidTeam?.name || "Bidder"}</b> bid <strong>{money(bid.amount_paise)}</strong> for {bid.player_name || currentPlayer?.name || "Player"}</span>
-                </div>;
-              })}
-              {!bids.length && <div className="ticker-item ticker-empty">Waiting for the first bid…</div>}
-            </div>
+            {bids.length > 0 ? (() => {
+              const bid = bids[0];
+              const bidTeam = teamInfo(bid.team_key);
+              return <div className="ticker-item latest-bid-item" key={`latest-bid-${bid.id || bid.created_at || "current"}`}>
+                <span className="ticker-team" style={{ "--team-color": bidTeam?.color || "#168BFF" }}>{bidTeam?.short || bid.team_key || "BID"}</span>
+                <span className="ticker-copy"><b>{bid.display_name || bidTeam?.name || "Bidder"}</b> bid <strong>{money(bid.amount_paise)}</strong> for {bid.player_name || currentPlayer?.name || "Player"}</span>
+              </div>;
+            })() : <div className="ticker-item ticker-empty">Waiting for the first bid…</div>}
           </div>
         </section>
       )}
@@ -862,38 +853,27 @@ export default function App() {
               </div>
             </header>
 
-            <div className="message-mode-tabs" role="tablist" aria-label="Room messages">
-              <button type="button" role="tab" aria-selected={messageMode === "bids"} className={messageMode === "bids" ? "active" : ""} onClick={() => setMessageMode("bids")}><Gavel size={15} /> Live Bids <span>{bids.length}</span></button>
-              <button type="button" role="tab" aria-selected={messageMode === "chat"} className={messageMode === "chat" ? "active" : ""} onClick={() => setMessageMode("chat")}><MessageCircle size={15} /> Chat <span>{messages.length}</span></button>
+            <div className="message-feed chat-only-feed" role="tabpanel" aria-label="Chat and sold announcements">
+              {messages.map((message, index) => {
+                const body = message.message || "";
+                const isSold = message.type === "sold" || message.event === "sold" || /\\bsold\\b/i.test(body);
+                const teamKey = message.team_key || message.teamKey;
+                const soldTeam = teamInfo(teamKey);
+                return <div className={`feed-item ${isSold ? "sold-message" : "chat-message"}`} key={`msg-${message.id || index}`} style={isSold ? { "--team-color": soldTeam?.color || "#00D7A0" } : undefined}>
+                  <span className="feed-icon">{isSold ? <Trophy size={14} /> : <MessageCircle size={14} />}</span>
+                  <div>
+                    <b>{message.display_name || (isSold ? "Auction update" : "Participant")}</b>
+                    <p>{body}</p>
+                  </div>
+                  <small>{message.created_at ? new Date(message.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}</small>
+                </div>;
+              })}
+              {!messages.length && <p className="empty-state">No messages yet. Sold announcements and chat messages will appear here.</p>}
             </div>
-            {messageMode === "bids" ? (
-              <div className="message-feed live-bids-feed" role="tabpanel">
-                {bids.map((bid, index) => {
-                  const bidTeam = teamInfo(bid.team_key);
-                  return <div className="feed-item bid-message" key={`bid-${bid.id || index}`} style={{ "--team-color": bidTeam?.color || "#EFC35D" }}>
-                    <span className="feed-icon"><Gavel size={14} /></span>
-                    <div><b>{bid.display_name || bid.participant_id || "Bidder"}</b><p>bid {money(bid.amount_paise)} · {bid.player_name || currentPlayer?.name || "Player"}</p></div>
-                    <small>{bidTeam?.short || bid.team_key || ""}</small>
-                  </div>;
-                })}
-                {!bids.length && <p className="empty-state">Live bids and auction results will appear here.</p>}
-              </div>
-            ) : (
-              <>
-                <div className="message-feed chat-only-feed" role="tabpanel">
-                  {messages.map((message, index) => <div className="feed-item" key={`msg-${message.id || index}`}>
-                    <span className="feed-icon"><MessageCircle size={14} /></span>
-                    <div><b>{message.display_name || "Participant"}</b><p>{message.message}</p></div>
-                    <small>{message.created_at ? new Date(message.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}</small>
-                  </div>)}
-                  {!messages.length && <p className="empty-state">No text messages yet. Start the conversation.</p>}
-                </div>
-                <form className="chat-form" onSubmit={sendChat}>
-                  <input value={chatText} onChange={e => setChatText(e.target.value)} placeholder="Message the room…" maxLength={500} />
-                  <button className="primary-button" type="submit" aria-label="Send message"><Send size={16} /></button>
-                </form>
-              </>
-            )}
+            <form className="chat-form" onSubmit={sendChat}>
+              <input value={chatText} onChange={e => setChatText(e.target.value)} placeholder="Message the room…" maxLength={500} />
+              <button className="primary-button" type="submit" aria-label="Send message"><Send size={16} /></button>
+            </form>
           </div>
         )}
 
