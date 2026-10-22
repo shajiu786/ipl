@@ -192,6 +192,32 @@ export function registerSockets(io, pool) {
     }
   };
   io.on('connection', socket => {
+    socket.on('team:select', async ({ code, participantId, teamKey } = {}, ack = () => {}) => {
+      const normalizedCode = String(code || '').toUpperCase();
+      if (!participantId || !TEAM_NAMES[teamKey]) return ack({ ok:false, error:'invalid_team' });
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const roomResult = await client.query('SELECT id,code FROM auction_rooms WHERE code=$1 FOR UPDATE', [normalizedCode]);
+        if (!roomResult.rowCount) { await client.query('ROLLBACK'); return ack({ ok:false, error:'room_not_found' }); }
+        const room = roomResult.rows[0];
+        const member = await client.query('SELECT * FROM room_participants WHERE room_id=$1 AND participant_id=$2 FOR UPDATE', [room.id, participantId]);
+        if (!member.rowCount) { await client.query('ROLLBACK'); return ack({ ok:false, error:'not_a_room_member' }); }
+        const taken = await client.query('SELECT 1 FROM room_participants WHERE room_id=$1 AND team_key=$2 AND participant_id<>$3 LIMIT 1', [room.id, teamKey, participantId]);
+        if (taken.rowCount) { await client.query('ROLLBACK'); return ack({ ok:false, error:'team_taken' }); }
+        await client.query('UPDATE room_participants SET team_key=$3 WHERE room_id=$1 AND participant_id=$2', [room.id, participantId, teamKey]);
+        await client.query('COMMIT');
+        const participantsResult = await pool.query('SELECT participant_id,display_name,team_key,is_host,connected FROM room_participants WHERE room_id=$1 ORDER BY display_name', [room.id]);
+        const participants = participantsResult.rows;
+        const updated = participants.find(p => p.participant_id === participantId);
+        io.to(normalizedCode).emit('lobby:participants', participants);
+        ack({ ok:true, participant:updated, participants });
+      } catch (error) {
+        try { await client.query('ROLLBACK'); } catch {}
+        ack({ ok:false, error:'team_selection_failed' });
+      } finally { client.release(); }
+    });
+
     socket.on('room:join-live', async ({ code, participantId } = {}, ack = () => {}) => {
       try {
         const room = await roomIdFor(code);
@@ -324,7 +350,19 @@ export function registerSockets(io, pool) {
           if(!state.unsoldPlayerIds.map(Number).includes(Number(state.currentPlayerId)))state.unsoldPlayerIds.push(Number(state.currentPlayerId));
           if(state.currentPlayer && !state.unsoldPlayers.some(p=>Number(p.id)===Number(state.currentPlayerId)))state.unsoldPlayers.push(state.currentPlayer);
         }
-        else if(action==='end') { state.status='ended';state.deadline=null;room.status='ended'; }
+        else if(action==='end') {
+          state.completedPlayerIds=Array.isArray(state.completedPlayerIds)?state.completedPlayerIds:[];
+          state.unsoldPlayerIds=Array.isArray(state.unsoldPlayerIds)?state.unsoldPlayerIds:[];
+          state.unsoldPlayers=Array.isArray(state.unsoldPlayers)?state.unsoldPlayers:[];
+          const remainingPlayers = await pool.query('SELECT id,name,role,nationality,source_data FROM players WHERE NOT (id = ANY($1::bigint[])) ORDER BY id', [state.completedPlayerIds.map(Number)]);
+          for (const player of remainingPlayers.rows) {
+            const id=Number(player.id);
+            if (!state.unsoldPlayerIds.map(Number).includes(id)) state.unsoldPlayerIds.push(id);
+            if (!state.completedPlayerIds.map(Number).includes(id)) state.completedPlayerIds.push(id);
+            if (!state.unsoldPlayers.some(p=>Number(p.id)===id)) state.unsoldPlayers.push(player);
+          }
+          state.status='ended';state.deadline=null;state.pausedRemainingMs=null;room.status='ended';
+        }
         else return ack({ok:false,error:'unknown_action'});
         await pool.query('UPDATE auction_rooms SET state=$2::jsonb,status=$3 WHERE id=$1',[room.id,JSON.stringify(state),room.status]);
         if (state.status === 'active' && state.deadline) scheduleRoomTimer(room.code, state.deadline);
