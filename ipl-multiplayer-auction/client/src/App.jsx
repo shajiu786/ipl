@@ -71,6 +71,7 @@ export default function App() {
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [remaining, setRemaining] = useState(0);
+  const [timerDuration, setTimerDuration] = useState(10);
   const [purses, setPurses] = useState([]);
   const [squads, setSquads] = useState([]);
   const [xi, setXi] = useState([]);
@@ -142,6 +143,7 @@ export default function App() {
 
       const nextRoom = roomR.data.room;
       setRoom(nextRoom);
+      setTimerDuration(Number(nextRoom.config?.durationSeconds) === 5 ? 5 : 10);
       setParticipants(roomR.data.participants || []);
       setAuction(nextRoom.state || { status: nextRoom.status, currentBidPaise: 0 });
       setBids(bidR.data.data || []);
@@ -319,6 +321,16 @@ export default function App() {
       playTone(isUnsold ? 420 : 880);
     });
 
+    socket.on("sale:skipped", event => {
+      setMessages(old => [{
+        id: `auction-skip-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        display_name: "AUCTION UPDATE",
+        message: `${event?.playerName || "Player"} skipped by host${event?.nextPlayerName ? ` · Next: ${event.nextPlayerName}` : " · Auction complete"}`,
+        auctionEvent: "skipped",
+        created_at: new Date().toISOString()
+      }, ...old].slice(0, 100));
+    });
+
     socket.on("connect_error", () => setNotice("Connection issue. Retrying…"));
 
     await Promise.all([loadRoomData(code), loadPlayers()]);
@@ -468,7 +480,16 @@ export default function App() {
 
     sendAction(action, payload, () => {
       if (action === "start" || action === "resume") setPage("auction");
-      setNotice(action === "start" ? "Auction started" : "Auction updated");
+      if (action === "set-duration") {
+        const duration = Number(payload.durationSeconds) === 5 ? 5 : 10;
+        setTimerDuration(duration);
+        setRoom(old => old ? { ...old, config: { ...(old.config || {}), durationSeconds: duration } } : old);
+        setNotice(`Bid timer set to ${duration} seconds`);
+      } else if (action === "skip-player") {
+        setNotice("Player skipped");
+      } else {
+        setNotice(action === "start" ? "Auction started" : "Auction updated");
+      }
     });
   };
 
@@ -589,7 +610,8 @@ export default function App() {
       groups.get(setNumber).players.push({
         ...player,
         sold: (state.soldPlayerIds || []).map(Number).includes(Number(player.id)),
-        unsold: (state.unsoldPlayerIds || []).map(Number).includes(Number(player.id))
+        unsold: (state.unsoldPlayerIds || []).map(Number).includes(Number(player.id)),
+        skipped: (state.skippedPlayerIds || []).map(Number).includes(Number(player.id))
       });
     });
 
@@ -777,9 +799,18 @@ export default function App() {
             </button>
             <div className="purse-summary"><Wallet size={15} /> Your purse <b>{money(myPurse?.remainingPursePaise ?? 120000000000)}</b></div>
             {isHost && (
-              <div className="host-actions">
+              <div className="host-actions host-auction-tools">
+                <label className="timer-choice">Bid timer
+                  <select aria-label="Choose bid timer" value={timerDuration} onChange={e => hostAction("set-duration", { durationSeconds: Number(e.target.value) })}>
+                    <option value={5}>5 seconds</option>
+                    <option value={10}>10 seconds</option>
+                  </select>
+                </label>
                 <button disabled={!auction.highestBidder || !currentPlayer || ["sold", "unsold", "ended"].includes(auction.status)} onClick={() => hostAction("sell")}><Check size={14} /> Sold</button>
                 <button disabled={!currentPlayer || ["sold", "unsold", "ended"].includes(auction.status)} onClick={() => hostAction("unsold")}>Unsold</button>
+                <button className="skip-player-button" disabled={!currentPlayer || ["sold", "unsold", "ended"].includes(auction.status)} onClick={() => {
+                  if (window.confirm(`Skip ${currentPlayer?.name || "this player"} and move to the next player?`)) hostAction("skip-player");
+                }}><ArrowRight size={14} /> Skip player</button>
                 {["sold", "unsold"].includes(auction.status) && <button onClick={() => hostAction("next-player")}><ArrowRight size={14} /> Next player</button>}
               </div>
             )}
@@ -909,8 +940,8 @@ export default function App() {
                 <article className="set-card" key={`${group.number}-${group.name}`}>
                   <div className="set-card-heading"><b>{group.name}</b><small>{group.players.length} players · {group.soldCount} sold · {group.unsoldCount} unsold · {group.remainingCount} left</small></div>
                   <span className={`set-status ${group.status}`}>{group.status === "completed" ? "✓ Completed" : group.status === "current" ? "● Current set" : "Upcoming"}</span>
-                  <details open={auction.status === "ended" || group.status === "completed"}><summary>View players · {group.players.length}</summary>
-                    <div className="set-player-list">{group.players.map(p => <p key={p.id} className={p.unsold ? "set-player-unsold" : p.sold ? "set-player-sold" : ""}><span>{p.name}{p.nationality && !/india|indian|local/i.test(p.nationality) ? " ✈️" : ""} · {p.role || "Role unavailable"}</span><small>{p.unsold ? "UNSOLD" : p.sold ? "SOLD" : "UPCOMING"}</small></p>)}</div>
+                  <details open={group.status === "current"}><summary>View players · {group.players.length}</summary>
+                    <div className="set-player-list">{group.players.map(p => <p key={p.id} className={p.skipped ? "set-player-skipped" : p.unsold ? "set-player-unsold" : p.sold ? "set-player-sold" : ""}><span>{p.name}{p.nationality && !/india|indian|local/i.test(p.nationality) ? " ✈️" : ""} · {p.role || "Role unavailable"}</span><small>{p.skipped ? "SKIPPED" : p.unsold ? "UNSOLD" : p.sold ? "SOLD" : "UPCOMING"}</small></p>)}</div>
                   </details>
                 </article>
               ))}
