@@ -3,6 +3,12 @@ import { nextBidAmount, TEAM_NAMES } from '../services/auction.js';
 
 export function registerSockets(io, pool) {
   const deadlineTimers = new Map();
+  const advanceTimers = new Map();
+  const clearAdvanceTimer = code => {
+    const timer = advanceTimers.get(String(code).toUpperCase());
+    if (timer) clearTimeout(timer);
+    advanceTimers.delete(String(code).toUpperCase());
+  };
   const clearRoomTimer = code => {
     const timer = deadlineTimers.get(code);
     if (timer) clearTimeout(timer);
@@ -44,6 +50,8 @@ export function registerSockets(io, pool) {
           if (inserted.rowCount) {
             state.status = 'sold';
             state.soldCount = Number(state.soldCount || 0) + 1;
+            state.soldPlayerIds = Array.isArray(state.soldPlayerIds) ? state.soldPlayerIds : [];
+            if (!state.soldPlayerIds.map(Number).includes(playerId)) state.soldPlayerIds.push(playerId);
             emitted = { teamKey: state.highestBidder.teamKey, teamName: state.highestBidder.teamName,
               playerName: state.currentPlayer?.name || 'Player', amountPaise: Number(state.currentBidPaise) };
           } else {
@@ -60,11 +68,13 @@ export function registerSockets(io, pool) {
         state.deadline = null;
         state.pausedRemainingMs = null;
         room.status = state.status;
+        state.currentSetNumber = state.currentPlayer?.source_data?.set_number ?? state.currentPlayer?.source_data?.setNumber ?? state.currentSetNumber ?? 'Unassigned';
       }
       await client.query('UPDATE auction_rooms SET state=$2::jsonb,status=$3 WHERE id=$1', [room.id, JSON.stringify(state), room.status]);
       await client.query('COMMIT');
       io.to(room.code).emit('auction:state', state);
       if (emitted) io.to(room.code).emit('sale:celebration', emitted);
+      if (['sold', 'unsold'].includes(state.status)) scheduleAdvance(room.code);
     } catch (error) {
       try { await client.query('ROLLBACK'); } catch {}
       throw error;
@@ -112,6 +122,74 @@ export function registerSockets(io, pool) {
     if (!nextId) return null;
     const player = await pool.query('SELECT id,name,role,nationality,batting_style,bowling_style,photo_url,base_price_paise,source_data FROM players WHERE id=$1', [nextId]);
     return player.rows[0] || null;
+  };
+  const scheduleAdvance = code => {
+    clearAdvanceTimer(code);
+    const normalizedCode = String(code).toUpperCase();
+    const timer = setTimeout(() => {
+      advanceRoomToNext(normalizedCode).catch(() => {});
+    }, 3500);
+    advanceTimers.set(normalizedCode, timer);
+  };
+  const advanceRoomToNext = async code => {
+    const client = await pool.connect();
+    let stateToEmit = null;
+    let setCompleteEvent = null;
+    let roomCode = String(code).toUpperCase();
+    try {
+      await client.query('BEGIN');
+      const result = await client.query('SELECT * FROM auction_rooms WHERE code=$1 FOR UPDATE', [roomCode]);
+      if (!result.rowCount) { await client.query('ROLLBACK'); return; }
+      const room = result.rows[0];
+      const state = room.state || {};
+      if (!['sold', 'unsold'].includes(state.status)) { await client.query('ROLLBACK'); return; }
+      const previousPlayer = state.currentPlayer || {};
+      const previousSet = previousPlayer.source_data?.set_number ?? previousPlayer.source_data?.setNumber ?? state.currentSetNumber ?? 'Unassigned';
+      await ensureAuctionOrder(room, state);
+      const next = await selectNextFromSavedOrder(state);
+      if (!next) {
+        state.currentPlayerId = null;
+        state.currentPlayer = null;
+        state.currentBidPaise = 0;
+        state.highestBidder = null;
+        state.status = 'ended';
+        state.deadline = null;
+        room.status = 'ended';
+      } else {
+        const nextSet = next.source_data?.set_number ?? next.source_data?.setNumber ?? 'Unassigned';
+        const allPlayersInPreviousSet = await client.query(
+          `SELECT id FROM players WHERE COALESCE(source_data->>'set_number', source_data->>'setNumber', 'Unassigned')=$1`,
+          [String(previousSet)]
+        );
+        const completedIds = new Set((state.completedPlayerIds || []).map(Number));
+        const setIsComplete = allPlayersInPreviousSet.rows.length > 0 && allPlayersInPreviousSet.rows.every(row => completedIds.has(Number(row.id)));
+        if (String(previousSet) !== String(nextSet) && setIsComplete) {
+          setCompleteEvent = { completedSetNumber: String(previousSet), nextSetNumber: String(nextSet), completedSetName: `Set ${previousSet}`, nextSetName: `Set ${nextSet}` };
+        }
+        state.currentPlayerId = Number(next.id);
+        state.currentPlayer = next;
+        state.currentSetNumber = nextSet;
+        state.currentBidPaise = 0;
+        state.highestBidder = null;
+        state.status = 'active';
+        state.pausedRemainingMs = null;
+        state.deadline = new Date(Date.now() + Number(room.config.durationSeconds || 10) * 1000).toISOString();
+        room.status = 'active';
+      }
+      stateToEmit = state;
+      await client.query('UPDATE auction_rooms SET state=$2::jsonb,status=$3 WHERE id=$1', [room.id, JSON.stringify(state), room.status]);
+      await client.query('COMMIT');
+      clearAdvanceTimer(roomCode);
+      io.to(roomCode).emit('auction:state', stateToEmit);
+      if (setCompleteEvent) io.to(roomCode).emit('auction:set-complete', setCompleteEvent);
+      if (stateToEmit.status === 'active' && stateToEmit.deadline) scheduleRoomTimer(roomCode, stateToEmit.deadline);
+      else clearRoomTimer(roomCode);
+    } catch (error) {
+      try { await client.query('ROLLBACK'); } catch {}
+      throw error;
+    } finally {
+      client.release();
+    }
   };
   io.on('connection', socket => {
     socket.on('room:join-live', async ({ code, participantId } = {}, ack = () => {}) => {
@@ -205,14 +283,15 @@ export function registerSockets(io, pool) {
           if(!state.currentPlayerId) {
             const next = await selectNextFromSavedOrder(state);
             if (!next) return ack({ok:false,error:'no_players_remaining'});
-            state.currentPlayerId=Number(next.id); state.currentPlayer=next; state.currentBidPaise=0; state.highestBidder=null;
+            state.currentPlayerId=Number(next.id); state.currentPlayer=next; state.currentSetNumber=next.source_data?.set_number ?? next.source_data?.setNumber ?? 'Unassigned'; state.currentBidPaise=0; state.highestBidder=null;
           }
           state.status='active'; state.deadline=new Date(Date.now() + Number(room.config.durationSeconds || 10)*1000).toISOString(); room.status='active';
         } else if(action==='next-player') {
+          clearAdvanceTimer(room.code);
           await ensureAuctionOrder(room, state);
           const next = await selectNextFromSavedOrder(state);
           if (!next) { state.currentPlayerId=null; state.currentPlayer=null; state.status='ended'; state.deadline=null; room.status='ended'; }
-          else { state.currentPlayerId=Number(next.id); state.currentPlayer=next; state.currentBidPaise=0; state.highestBidder=null; state.status='ready'; state.deadline=null; room.status='ready'; }
+          else { state.currentPlayerId=Number(next.id); state.currentPlayer=next; state.currentSetNumber=next.source_data?.set_number ?? next.source_data?.setNumber ?? 'Unassigned'; state.currentBidPaise=0; state.highestBidder=null; state.status='ready'; state.deadline=null; room.status='ready'; }
         } else if(action==='pause') {
           if (state.status !== 'active') return ack({ok:false,error:'auction_not_active'});
           state.pausedRemainingMs = Math.max(0, new Date(state.deadline || Date.now()).getTime() - Date.now());
@@ -230,11 +309,14 @@ export function registerSockets(io, pool) {
           state.currentPlayerId=id;state.currentPlayer=player.rows[0];state.currentBidPaise=0;state.highestBidder=null;state.status='ready';state.deadline=null;room.status='ready';
         } else if(action==='sell') {
           if(!state.highestBidder || !state.currentPlayerId)return ack({ok:false,error:'no_valid_bid'});
+          if (['sold', 'unsold', 'ended'].includes(state.status)) return ack({ok:false,error:'player_already_settled'});
+          const alreadySold = await pool.query('SELECT 1 FROM room_squad_players WHERE room_id=$1 AND player_id=$2', [room.id, state.currentPlayerId]);
+          if (alreadySold.rowCount) return ack({ok:false,error:'player_already_settled'});
           await pool.query('INSERT INTO room_squad_players(room_id,team_key,player_id,purchase_price_paise) VALUES($1,$2,$3,$4) ON CONFLICT(room_id,player_id) DO NOTHING',[room.id,state.highestBidder.teamKey,state.currentPlayerId,state.currentBidPaise]);
-          state.status='sold';state.soldCount=Number(state.soldCount||0)+1;state.deadline=null;room.status='ready';state.completedPlayerIds=Array.isArray(state.completedPlayerIds)?state.completedPlayerIds:[];if(!state.completedPlayerIds.map(Number).includes(Number(state.currentPlayerId)))state.completedPlayerIds.push(Number(state.currentPlayerId));
+          state.status='sold';state.soldCount=Number(state.soldCount||0)+1;state.deadline=null;room.status='sold';state.completedPlayerIds=Array.isArray(state.completedPlayerIds)?state.completedPlayerIds:[];state.soldPlayerIds=Array.isArray(state.soldPlayerIds)?state.soldPlayerIds:[];if(!state.completedPlayerIds.map(Number).includes(Number(state.currentPlayerId)))state.completedPlayerIds.push(Number(state.currentPlayerId));if(!state.soldPlayerIds.map(Number).includes(Number(state.currentPlayerId)))state.soldPlayerIds.push(Number(state.currentPlayerId));
         } else if(action==='unsold') {
           if (!state.currentPlayerId || ['sold','unsold','ended'].includes(state.status)) return ack({ok:false,error:'no_active_player'});
-          state.status='unsold';state.unsoldCount=Number(state.unsoldCount||0)+1;state.deadline=null;room.status='ready';
+          state.status='unsold';state.unsoldCount=Number(state.unsoldCount||0)+1;state.deadline=null;room.status='unsold';
           state.completedPlayerIds=Array.isArray(state.completedPlayerIds)?state.completedPlayerIds:[];
           state.unsoldPlayerIds=Array.isArray(state.unsoldPlayerIds)?state.unsoldPlayerIds:[];
           state.unsoldPlayers=Array.isArray(state.unsoldPlayers)?state.unsoldPlayers:[];
@@ -254,6 +336,7 @@ export function registerSockets(io, pool) {
           playerName: state.currentPlayer?.name || 'Player',
           amountPaise: Number(state.currentBidPaise || 0)
         });
+        if (['sell', 'unsold'].includes(action)) scheduleAdvance(room.code);
         ack({ok:true,state});
       } catch { ack({ok:false,error:'host_action_failed'}); }
     });
