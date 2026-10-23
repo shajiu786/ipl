@@ -4,7 +4,7 @@ import { io } from "socket.io-client";
 import {
   ArrowRight, Check, Clipboard, Crown, Gavel, Layers, ListOrdered,
   MessageCircle, Mic, MicOff, Pause, Play, Radio, Send, Trophy,
-  Users, Wallet, X, Volume2, VolumeX, Settings, ChevronDown, ChevronRight, ChevronUp, Timer
+  Users, Wallet, X, Volume2, VolumeX, Settings, ChevronDown, ChevronRight, ChevronUp, Timer, Flag
 } from "lucide-react";
 import "./styles/app.css";
 import "./styles/theme.css";
@@ -27,6 +27,19 @@ const TEAMS = [
   { key: "lsg", short: "LSG", name: "Lucknow Super Giants", color: "#54C5C4" }
 ];
 
+
+// WebRTC relay servers. STUN alone fails for many players (mobile data, strict Wi-Fi/NAT),
+// so a TURN relay is included. Override with VITE_ICE_SERVERS='[{"urls":"turn:...","username":"..","credential":".."}]'
+const DEFAULT_ICE_SERVERS = [
+  { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] },
+  { urls: ["turn:openrelay.metered.ca:80", "turn:openrelay.metered.ca:443", "turns:openrelay.metered.ca:443?transport=tcp"], username: "openrelayproject", credential: "openrelayproject" }
+];
+const ICE_SERVERS = (() => {
+  try {
+    const custom = JSON.parse(import.meta.env.VITE_ICE_SERVERS || "null");
+    return Array.isArray(custom) && custom.length ? custom : DEFAULT_ICE_SERVERS;
+  } catch { return DEFAULT_ICE_SERVERS; }
+})();
 
 const makeId = () => {
   let id = sessionStorage.getItem("iplParticipantId");
@@ -129,6 +142,7 @@ export default function App() {
   const [voiceJoined, setVoiceJoined] = useState(false);
   const [muted, setMuted] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [voicePeers, setVoicePeers] = useState(0);
 
   const socketRef = useRef(null);
   const barRef = useRef(null);
@@ -242,6 +256,13 @@ export default function App() {
           setNotice("Connected to live auction");
           if (response.room?.state) setAuction(response.room.state);
           if (response.room?.config) setRoom(old => ({ ...(old || {}), config: response.room.config }));
+          // After a reconnect the server forgets who was in voice: rejoin with fresh peer links.
+          if (localStreamRef.current) {
+            Object.values(peersRef.current).forEach(peer => peer.close());
+            peersRef.current = {};
+            pendingIceRef.current = {};
+            socket.emit("voice:join");
+          }
         } else {
           setNotice(getError({ message: response?.error }, "Room connection failed"));
         }
@@ -255,9 +276,7 @@ export default function App() {
       if (!targetSocketId || targetSocketId === socket.id || peersRef.current[targetSocketId]) return;
       const stream = localStreamRef.current;
       if (!stream) return;
-      const pc = new RTCPeerConnection({
-        iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
-      });
+      const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
       peersRef.current[targetSocketId] = pc;
       stream.getTracks().forEach(track => pc.addTrack(track, stream));
       pc.onicecandidate = event => {
@@ -276,13 +295,24 @@ export default function App() {
         }
         audio.muted = !soundOn;
         audio.srcObject = event.streams[0];
-        audio.play().catch(() => setNotice("Tap the page once to allow incoming voice audio."));
+        audio.play().catch(() => {
+          setNotice("Tap anywhere once to hear voice chat.");
+          const retry = () => document.querySelectorAll('audio[id^="voice-audio-"]').forEach(a => a.play().catch(() => {}));
+          window.addEventListener("pointerdown", retry, { once: true });
+        });
+      };
+      const dropPeer = () => {
+        pc.close();
+        if (peersRef.current[targetSocketId] === pc) delete peersRef.current[targetSocketId];
+        document.getElementById(`voice-audio-${targetSocketId}`)?.remove();
+        setVoicePeers(Object.values(peersRef.current).filter(p => p.connectionState === "connected").length);
       };
       pc.onconnectionstatechange = () => {
-        if (["failed", "closed", "disconnected"].includes(pc.connectionState)) {
-          pc.close();
-          delete peersRef.current[targetSocketId];
-        }
+        const state = pc.connectionState;
+        setVoicePeers(Object.values(peersRef.current).filter(p => p.connectionState === "connected").length);
+        if (state === "failed" || state === "closed") dropPeer();
+        // "disconnected" is often a brief network blip: give it a few seconds to recover.
+        else if (state === "disconnected") setTimeout(() => { if (pc.connectionState === "disconnected") dropPeer(); }, 6000);
       };
       if (shouldOffer) {
         const offer = await pc.createOffer();
@@ -367,8 +397,6 @@ export default function App() {
         team_key: event?.teamKey || event?.team_key || null,
         created_at: new Date().toISOString()
       }, ...old].slice(0, 100));
-      setTab("messages");
-      setMessageMode("bids");
       playTone(isUnsold ? 420 : 880);
     });
 
@@ -380,8 +408,6 @@ export default function App() {
         auctionEvent: "skipped",
         created_at: new Date().toISOString()
       }, ...old].slice(0, 100));
-      setTab("messages");
-      setMessageMode("bids");
     });
 
     socket.on("connect_error", () => setNotice("Connection issue. Retrying…"));
@@ -448,6 +474,11 @@ export default function App() {
     }
     return () => cancelAnimationFrame(raf);
   }, [page, auction.status, auction.deadline, auction.auctionVersion, auction.pausedRemainingMs, duration]);
+
+  // When the host ends the auction, everyone lands on the full squads view.
+  useEffect(() => {
+    if (auction.status === "ended") setTab("squads");
+  }, [auction.status]);
 
   const setTimerSeconds = seconds => {
     const socket = socketRef.current;
@@ -620,15 +651,21 @@ export default function App() {
       document.querySelectorAll('audio[id^="voice-audio-"]').forEach(audio => audio.remove());
       localStreamRef.current?.getTracks().forEach(track => track.stop());
       localStreamRef.current = null;
+      socketRef.current?.emit("voice:leave");
       setVoiceJoined(false);
+      setVoicePeers(0);
       setMicOn(false);
       setMuted(false);
       setNotice("You left voice chat.");
       return;
     }
     try {
+      if (!window.isSecureContext) {
+        setNotice("Voice needs a secure connection. Open the https:// link, not an http:// address.");
+        return;
+      }
       if (!navigator.mediaDevices?.getUserMedia) {
-        setNotice("Voice chat requires HTTPS and a browser with microphone support.");
+        setNotice("This browser can't access the microphone.");
         return;
       }
       if (!socketRef.current?.connected) {
@@ -645,7 +682,7 @@ export default function App() {
       setMuted(false);
       setVoiceJoined(true);
       socketRef.current.emit("voice:join");
-      setNotice("Voice chat joined. Other players must select Join Voice too.");
+      setNotice("Voice joined. Others hear you once they join voice too.");
     } catch (error) {
       setNotice(error?.name === "NotAllowedError" ? "Allow microphone permission in your browser settings." : "Microphone unavailable. Use HTTPS and check your audio device.");
     }
@@ -817,12 +854,22 @@ export default function App() {
   const bidDisabled = auction.status !== "active" || !currentPlayer || !myTeam || remaining <= 0 || iLead;
   const pursePaise = myPurse?.remainingPursePaise ?? 120000000000;
   const goLower = id => setTab(id);
-  const TABS = [
-    { id: "messages", label: "Live Chat", Icon: MessageCircle, count: chatMessages.length },
-    { id: "squads", label: "My Squad & Purse", Icon: Users },
-    { id: "sets", label: "Sets", Icon: Layers }
-  ];
-  if (auction.status === "ended") TABS.splice(2, 0, { id: "xi", label: "Playing XI", Icon: ListOrdered });
+  const ended = auction.status === "ended";
+  const TABS = ended
+    ? [
+        { id: "squads", label: "Squads & Purse", Icon: Users },
+        { id: "xi", label: "Playing XI", Icon: ListOrdered },
+        { id: "sets", label: "Sets", Icon: Layers },
+        { id: "messages", label: "Chat", Icon: MessageCircle, count: chatMessages.length }
+      ]
+    : [
+        { id: "messages", label: "Live Chat", Icon: MessageCircle, count: chatMessages.length },
+        { id: "squads", label: "My Squad & Purse", Icon: Users },
+        { id: "sets", label: "Sets", Icon: Layers }
+      ];
+  const endAuction = () => {
+    if (window.confirm("End the auction now? Remaining players stay unsold and everyone will see the final squads.")) hostAction("end");
+  };
 
   const squadCards = [...TEAMS].sort((a, b) => (a.key === myTeam ? -1 : b.key === myTeam ? 1 : 0)).map(team => {
     const list = squads.filter(p => p.team_key === team.key);
@@ -863,7 +910,7 @@ export default function App() {
       {settingsOpen && (
         <div className="ar-settings" role="menu">
           <button onClick={() => setSoundOn(v => !v)}>{soundOn ? <Volume2 size={17} /> : <VolumeX size={17} />} Auction sounds <b>{soundOn ? "On" : "Off"}</b></button>
-          <button onClick={startVoice}><Radio size={17} /> Voice chat <b>{voiceJoined ? "Leave" : "Join"}</b></button>
+          <button onClick={startVoice}><Radio size={17} /> Voice chat <b>{voiceJoined ? `Leave · ${voicePeers} linked` : "Join"}</b></button>
           <button disabled={!voiceJoined} onClick={() => {
             const nextMuted = !muted;
             localStreamRef.current?.getAudioTracks().forEach(track => { track.enabled = !nextMuted; });
@@ -872,26 +919,15 @@ export default function App() {
           {isHost && (
             <div className="ar-settings-timer"><span>Bid timer (seconds)</span><TimerPicker value={duration} onChange={setTimerSeconds} /></div>
           )}
-          {isHost && auction.status !== "ended" && (
-            <button className="danger" onClick={() => { if (window.confirm("End the auction now? Remaining players will stay unsold.")) hostAction("end"); }}><X size={17} /> End auction</button>
-          )}
         </div>
       )}
 
       <section className="ar-card ar-identity">
         <span className="ar-avatar">{myName.trim().charAt(0).toUpperCase()}</span>
         <div className="ar-identity-copy"><small>YOU ARE PLAYING AS</small><strong>{myName}</strong></div>
-        <label className={`ar-select ${myTeam ? "chosen" : ""}`}>
-          <select value={myTeam || ""} onChange={e => e.target.value && chooseTeam(e.target.value)} aria-label="Select your team">
-            <option value="" disabled>Select a team</option>
-            {TEAMS.map(t => {
-              const owner = teamOwners[t.key];
-              const taken = owner && t.key !== myTeam;
-              return <option key={t.key} value={t.key} disabled={Boolean(taken)}>{t.name}{taken ? ` — ${owner}` : ""}</option>;
-            })}
-          </select>
-          <ChevronDown size={18} />
-        </label>
+        <span className={`ar-teamtag ${myTeam ? "" : "none"}`} style={{ "--team-color": teamInfo(myTeam)?.color }} title="Teams are picked in the lobby">
+          {myTeam ? <><TeamChip teamKey={myTeam} /><b>{teamInfo(myTeam)?.name}</b></> : <b>Spectating</b>}
+        </span>
       </section>
 
       </div>
@@ -940,11 +976,12 @@ export default function App() {
           </button>
         </div>
 
-        {isHost && (
+        {isHost && !ended && (
           <div className="ar-host">
             <button disabled={!auction.highestBidder || !currentPlayer || ["sold", "unsold", "ended"].includes(auction.status)} onClick={() => hostAction("sell")}><Check size={15} /> Sold</button>
             <button disabled={!currentPlayer || ["sold", "unsold", "ended"].includes(auction.status)} onClick={() => hostAction("unsold")}>Unsold</button>
-            {["sold", "unsold"].includes(auction.status) && <button className="next" onClick={() => hostAction("next-player")}><ArrowRight size={15} /> Next player</button>}
+            {["sold", "unsold"].includes(auction.status) && <button className="next" onClick={() => hostAction("next-player")}><ArrowRight size={15} /> Next</button>}
+            <button className="end" onClick={endAuction}><Flag size={15} /><span className="ar-end-long">End auction</span><span className="ar-end-short">End</span></button>
           </div>
         )}
 
@@ -961,9 +998,9 @@ export default function App() {
         </header>
         <ul>
           {visibleFeed.map(item => item.kind === "bid" ? (
-            <li key={item.id}>
+            <li key={item.id} className={item.bid.team_key && item.bid.team_key === myTeam ? "mine" : ""}>
               <TeamChip teamKey={item.bid.team_key} />
-              <span className="ar-feed-text"><span>{CITY[item.bid.team_key] || item.bid.display_name || "Bidder"} placed <b>{money(item.bid.amount_paise)}</b> for {item.bid.player_name || currentPlayer?.name || "player"}</span></span>
+              <span className="ar-feed-text"><span>{item.bid.team_key && item.bid.team_key === myTeam ? "You" : CITY[item.bid.team_key] || item.bid.display_name || "Bidder"} bid <b>{money(item.bid.amount_paise)}</b> for {item.bid.player_name || currentPlayer?.name || "player"}</span></span>
               <time>{clock(item.at)}</time>
             </li>
           ) : (
@@ -978,6 +1015,12 @@ export default function App() {
       </section>
 
       <section className="ar-card ar-lower" id="ar-lower">
+        {ended && (
+          <div className="ar-endbanner">
+            <Trophy size={20} /><b>Auction complete</b>
+            <span>{auction.soldCount || 0} sold · {auction.unsoldCount || 0} unsold</span>
+          </div>
+        )}
         <div className="ar-tabs" role="tablist">
           {TABS.map(({ id, label, Icon, count }) => (
             <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? "active" : ""} onClick={() => setTab(id)}>
@@ -1000,8 +1043,9 @@ export default function App() {
               {!chatMessages.length && <li className="empty">No messages yet. Start the conversation.</li>}
             </ul>
             <form className="ar-compose" onSubmit={sendChat}>
-              <button type="button" className={`ar-voice ${voiceJoined ? "on" : ""}`} onClick={startVoice} aria-label={voiceJoined ? "Leave voice chat" : "Join voice chat"} title={voiceJoined ? "Leave voice chat" : "Join voice chat"}>
+              <button type="button" className={`ar-voice ${voiceJoined ? "on" : ""}`} onClick={startVoice} aria-label={voiceJoined ? "Leave voice chat" : "Join voice chat"} title={voiceJoined ? `Voice on · ${voicePeers} connected. Tap to leave` : "Join voice chat"}>
                 {voiceJoined ? <Mic size={22} /> : <Radio size={22} />}
+                {voiceJoined && <i className="ar-voice-count">{voicePeers}</i>}
               </button>
               <input value={chatText} onChange={e => setChatText(e.target.value)} placeholder="Send a message…" maxLength={500} />
               <button className="ar-send" type="submit" aria-label="Send message"><Send size={24} /></button>
