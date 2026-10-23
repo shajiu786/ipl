@@ -2,9 +2,9 @@
    Loaded after app.css so it overrides the older gold palette. */
 
 :root {
-  --bg: #030814;
-  --panel: #0a1736;
-  --panel2: #0e2048;
+  --bg: #01040c;
+  --panel: #050e26;
+  --panel2: #08183a;
   --line: rgba(130, 170, 255, 0.18);
   --text: #eaf1ff;
   --muted: #8fa6cf;
@@ -13,21 +13,21 @@
   --green: #19d9a0;
   --red: #ff4d6a;
 
-  --glass: linear-gradient(180deg, rgba(40, 72, 150, 0.34), rgba(12, 26, 64, 0.5));
-  --glass-solid: rgba(12, 26, 64, 0.72);
-  --glass-edge: rgba(140, 178, 255, 0.2);
+  --glass: linear-gradient(180deg, rgba(24, 46, 104, 0.3), rgba(4, 11, 32, 0.58));
+  --glass-solid: rgba(5, 13, 36, 0.78);
+  --glass-edge: rgba(120, 160, 240, 0.15);
   --glass-inset: rgba(255, 255, 255, 0.08);
-  --glass-shadow: 0 14px 44px -14px rgba(0, 0, 0, 0.7), 0 0 30px -12px rgba(47, 107, 255, 0.5);
+  --glass-shadow: 0 14px 44px -14px rgba(0, 0, 0, 0.8), 0 0 30px -14px rgba(47, 107, 255, 0.4);
   --accent: #4aa8ff;
   --accent-2: #2f6bff;
   --accent-deep: #1d46d8;
   font-family: "Manrope", "DM Sans", system-ui, sans-serif;
   color: var(--text);
   background:
-    radial-gradient(60% 48% at 10% -6%, rgba(47, 107, 255, 0.4), transparent 70%),
-    radial-gradient(48% 42% at 96% 8%, rgba(98, 84, 255, 0.26), transparent 70%),
-    radial-gradient(60% 55% at 50% 112%, rgba(14, 124, 255, 0.22), transparent 70%),
-    #030814;
+    radial-gradient(60% 48% at 10% -6%, rgba(47, 107, 255, 0.27), transparent 70%),
+    radial-gradient(48% 42% at 96% 8%, rgba(98, 84, 255, 0.16), transparent 70%),
+    radial-gradient(60% 55% at 50% 112%, rgba(14, 124, 255, 0.14), transparent 70%),
+    #01040c;
   background-attachment: fixed;
 }
 
@@ -36,7 +36,7 @@ body, #root { background: transparent; }
 /* ---------- shared controls ---------- */
 input, select {
   color: var(--text);
-  background: rgba(6, 16, 42, 0.7);
+  background: rgba(2, 8, 24, 0.75);
   border: 1px solid var(--glass-edge);
   border-radius: 12px;
 }
@@ -67,7 +67,7 @@ input::placeholder { color: #6f86b3; }
 }
 .toast {
   color: #dcebff;
-  background: rgba(10, 24, 60, 0.88);
+  background: rgba(3, 10, 30, 0.92);
   border: 1px solid var(--glass-edge);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
