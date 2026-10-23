@@ -16,7 +16,7 @@ html:has(.ar-app) #root { height: 100%; overflow: hidden; }
   --ar-red: #ff4d6a;
   --ar-amber: #ffc53d;
   --ar-muted: #8fa6cf;
-  --ar-tile: rgba(255, 255, 255, 0.045);
+  --ar-tile: rgba(255, 255, 255, 0.035);
 
   position: relative;
   width: 100%;
@@ -81,7 +81,7 @@ html:has(.ar-app) #root { height: 100%; overflow: hidden; }
 .ar-status {
   display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: 999px;
   font-size: 11px; font-weight: 800; letter-spacing: 0.05em; color: var(--ar-muted);
-  border: 1px solid var(--ar-line); background: rgba(8, 20, 50, 0.6);
+  border: 1px solid var(--ar-line); background: rgba(3, 10, 30, 0.65);
 }
 .ar-status i { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
 .ar-status.on { color: var(--ar-green); border-color: rgba(25, 217, 160, 0.45); background: rgba(5, 60, 50, 0.45); }
@@ -103,7 +103,7 @@ html:has(.ar-app) #root { height: 100%; overflow: hidden; }
 .ar-settings {
   position: absolute; z-index: 70; top: calc(60px + env(safe-area-inset-top, 0px)); right: 10px; width: min(310px, calc(100% - 20px));
   padding: 8px; display: grid; gap: 4px; border-radius: 18px;
-  border: 1px solid var(--glass-edge); background: rgba(8, 20, 52, 0.92);
+  border: 1px solid var(--glass-edge); background: rgba(3, 9, 28, 0.95);
   backdrop-filter: blur(26px) saturate(160%); -webkit-backdrop-filter: blur(26px) saturate(160%);
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.65), 0 0 30px -10px var(--ar-blue);
 }
@@ -163,7 +163,7 @@ html:has(.ar-app) #root { height: 100%; overflow: hidden; }
 .ar-player { display: grid; grid-template-columns: 78px minmax(0, 1fr); gap: 12px; align-items: stretch; }
 .ar-photo {
   position: relative; margin: 0; width: 78px; height: 100%; min-height: 98px; overflow: hidden; border-radius: 14px;
-  border: 1px solid var(--glass-edge); background: linear-gradient(160deg, rgba(47, 107, 255, 0.5), rgba(8, 20, 52, 0.9));
+  border: 1px solid var(--glass-edge); background: linear-gradient(160deg, rgba(47, 107, 255, 0.4), rgba(3, 9, 28, 0.95));
 }
 .ar-photo img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: top center; display: block; }
 .ar-photo-fallback { position: absolute; inset: 0; display: grid; place-items: center; font-family: "Space Grotesk", sans-serif; font-size: 28px; font-weight: 700; color: rgba(79, 195, 255, 0.6); }
@@ -187,7 +187,7 @@ html:has(.ar-app) #root { height: 100%; overflow: hidden; }
 .ar-base b { font-size: 18px; color: var(--ar-cyan); font-weight: 700; white-space: nowrap; }
 
 /* ---------- bidding ---------- */
-.ar-bidbox { display: grid; border-radius: 16px; border: 1px solid var(--ar-line); background: rgba(4, 12, 34, 0.5); overflow: hidden; }
+.ar-bidbox { display: grid; border-radius: 16px; border: 1px solid var(--ar-line); background: rgba(1, 5, 18, 0.6); overflow: hidden; }
 .ar-now { display: grid; grid-template-columns: 1fr 1.15fr 1fr; align-items: stretch; padding: 8px 4px 8px 12px; }
 .ar-now > div { display: grid; gap: 3px; align-content: center; padding-right: 8px; min-width: 0; }
 .ar-now > div + div { padding-left: 10px; border-left: 1px solid var(--ar-line-soft); }
@@ -273,7 +273,7 @@ html:has(.ar-app) #root { height: 100%; overflow: hidden; }
 .ar-chat li.empty { background: none; border: 0; }
 
 .ar-compose { flex: none; display: flex; gap: 8px; align-items: center; }
-.ar-compose input { flex: 1; min-width: 0; height: 42px; padding: 0 16px; font: inherit; font-size: 14.5px; color: #fff; border: 1px solid var(--ar-line); border-radius: 999px; background: rgba(4, 12, 34, 0.6); }
+.ar-compose input { flex: 1; min-width: 0; height: 42px; padding: 0 16px; font: inherit; font-size: 14.5px; color: #fff; border: 1px solid var(--ar-line); border-radius: 999px; background: rgba(1, 5, 18, 0.65); }
 .ar-voice { flex: none; width: 42px; height: 42px; display: grid; place-items: center; cursor: pointer; border-radius: 12px; border: 1px solid var(--ar-line); background: rgba(255, 255, 255, 0.06); color: var(--ar-cyan); }
 .ar-voice svg { width: 19px; height: 19px; }
 .ar-voice.on { color: var(--ar-green); border-color: rgba(25, 217, 160, 0.55); }
@@ -330,7 +330,7 @@ html:has(.ar-app) #root { height: 100%; overflow: hidden; }
 .ar-save { flex: none; height: 44px; cursor: pointer; border: 1px solid rgba(160, 200, 255, 0.4); border-radius: 12px; font-size: 15px; font-weight: 800; color: #fff; background: linear-gradient(180deg, #3d87ff, #1d46d8); }
 .ar-save:disabled { opacity: 0.4; cursor: not-allowed; }
 
-.ar-app .toast { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 80; width: max-content; max-width: min(520px, calc(100% - 24px)); }
+.ar-app .toast { position: fixed; left: 50%; top: calc(62px + env(safe-area-inset-top, 0px)); bottom: auto; transform: translateX(-50%); z-index: 80; width: max-content; max-width: min(520px, calc(100% - 24px)); }
 
 /* ---------- very small phones ---------- */
 @media (max-width: 440px) {
@@ -496,3 +496,50 @@ html:has(.ar-app) #root { height: 100%; overflow: hidden; }
 }
 
 @media (prefers-reduced-motion: reduce) { .ar-bid { transition: none; } }
+
+
+/* ---------- team tag (teams are picked in the lobby only) ---------- */
+.ar-teamtag {
+  flex: none; display: inline-flex; align-items: center; gap: 8px; max-width: 56%; height: 38px; padding: 0 12px 0 5px;
+  border-radius: 999px; border: 1px solid color-mix(in srgb, var(--team-color, #4fc3ff) 55%, transparent);
+  background: color-mix(in srgb, var(--team-color, #4fc3ff) 16%, rgba(2, 8, 24, 0.7));
+}
+.ar-teamtag b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; }
+.ar-teamtag.none { padding: 0 14px; color: var(--ar-muted); border-color: var(--ar-line); background: rgba(255, 255, 255, 0.04); }
+
+/* ---------- host: End auction ---------- */
+.ar-host button.end { border-color: rgba(255, 77, 106, 0.6); color: #ff9aab; background: rgba(255, 77, 106, 0.12); }
+.ar-host button.end:hover:not(:disabled) { background: rgba(255, 77, 106, 0.22); }
+.ar-end-long { display: none; }
+@media (min-width: 520px) { .ar-end-long { display: inline; } .ar-end-short { display: none; } }
+
+/* ---------- voice badge + own bids ---------- */
+.ar-voice { position: relative; }
+.ar-voice-count {
+  position: absolute; top: -5px; right: -5px; min-width: 18px; height: 18px; padding: 0 4px; display: grid; place-items: center;
+  border-radius: 999px; font-style: normal; font-size: 10.5px; font-weight: 800; color: #00170f; background: var(--ar-green);
+}
+.ar-feed li.mine { background: rgba(47, 107, 255, 0.16); border-radius: 10px; padding-left: 6px; padding-right: 6px; color: #fff; }
+
+/* ---------- auction ended: squads open big ---------- */
+.ar-endbanner {
+  flex: none; display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--ar-line);
+  background: linear-gradient(90deg, rgba(25, 217, 160, 0.16), rgba(47, 107, 255, 0.1)); color: var(--ar-green);
+}
+.ar-endbanner b { font-size: 17px; color: #fff; }
+.ar-endbanner span { margin-left: auto; font-size: 13px; color: var(--ar-muted); }
+.ar-app.is-ended .ar-lot, .ar-app.is-ended .ar-feed { display: none; }
+.ar-app.is-ended .ar-lower { flex: 1 1 0; min-height: 0; }
+.ar-app.is-ended .ar-squad { padding: 14px; gap: 10px; }
+.ar-app.is-ended .ar-squad-head b { font-size: 16px; }
+.ar-app.is-ended .ar-squad-player { font-size: 14.5px; padding: 8px 11px; }
+@media (min-width: 900px) {
+  .ar-app.is-ended { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); grid-template-areas: "bar" "lower"; }
+  .ar-app.is-ended .ar-squads { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); align-content: start; gap: 14px; }
+  .ar-app.is-ended .ar-panel { padding: 18px; }
+  .ar-app.is-ended .ar-tabs button { height: 58px; font-size: 15.5px; }
+  .ar-endbanner { padding: 16px 24px; }
+  .ar-endbanner b { font-size: 22px; }
+  .ar-endbanner span { font-size: 15px; }
+  .ar-teamtag { height: 42px; max-width: 260px; }
+}
