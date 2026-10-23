@@ -134,7 +134,8 @@ export default function App() {
   const [purses, setPurses] = useState([]);
   const [squads, setSquads] = useState([]);
   const [xi, setXi] = useState([]);
-  const [xiTeam, setXiTeam] = useState("csk");
+  const [xiTeam, setXiTeam] = useState(null);
+  const [saleToast, setSaleToast] = useState(null);
   const [playerSearch, setPlayerSearch] = useState("");
   const [setsFilter, setSetsFilter] = useState("all");
   const [soundOn, setSoundOn] = useState(true);
@@ -168,7 +169,7 @@ export default function App() {
 
   const myPurse = purses.find(p => p.team_key === myTeam);
   const mySquad = squads.filter(p => p.team_key === myTeam);
-  const selectedXI = xi.filter(p => p.team_key === xiTeam);
+  const selectedXI = xi.filter(p => p.team_key === myTeam);
 
   const filteredPlayers = players.filter(p =>
     `${p.name || ""} ${p.role || ""}`.toLowerCase().includes(playerSearch.toLowerCase())
@@ -289,11 +290,11 @@ export default function App() {
           audio.id = `voice-audio-${targetSocketId}`;
           audio.autoplay = true;
           audio.playsInline = true;
-          audio.muted = !soundOn;
+          audio.muted = false;
           audio.style.display = "none";
           document.body.appendChild(audio);
         }
-        audio.muted = !soundOn;
+        audio.muted = false;
         audio.srcObject = event.streams[0];
         audio.play().catch(() => {
           setNotice("Tap anywhere once to hear voice chat.");
@@ -397,6 +398,7 @@ export default function App() {
         team_key: event?.teamKey || event?.team_key || null,
         created_at: new Date().toISOString()
       }, ...old].slice(0, 100));
+      setSaleToast({ status: isUnsold ? "unsold" : "sold", playerName: event?.playerName || "Player", teamKey: event?.teamKey || event?.team_key || null, teamName: team || "Winning team" });
       playTone(isUnsold ? 420 : 880);
     });
 
@@ -414,10 +416,6 @@ export default function App() {
 
     await Promise.all([loadRoomData(code), loadPlayers()]);
   }, [loadPlayers, loadRoomData, playTone, soundOn]);
-
-  useEffect(() => {
-    document.querySelectorAll('audio[id^="voice-audio-"]').forEach(audio => { audio.muted = !soundOn; });
-  }, [soundOn]);
 
   useEffect(() => () => {
     socketRef.current?.disconnect();
@@ -689,10 +687,11 @@ export default function App() {
   };
 
   const saveXI = async () => {
+    if (!myTeam) { setNotice("Select your team before building a Playing XI."); return; }
     try {
       await api.put(`/api/rooms/${roomCode}/playing-xi`, {
         participantId,
-        teamKey: xiTeam,
+        teamKey: myTeam,
         playerIds: selectedXI.map(p => Number(p.id))
       });
       setNotice("Playing XI saved");
@@ -702,13 +701,23 @@ export default function App() {
     }
   };
 
+  useEffect(() => {
+    if (!saleToast) return;
+    const timer = setTimeout(() => setSaleToast(null), 3200);
+    return () => clearTimeout(timer);
+  }, [saleToast]);
+
   const toggleXI = playerId => {
     const already = selectedXI.some(p => Number(p.id) === Number(playerId));
     if (already) {
-      setXi(old => old.filter(p => !(p.team_key === xiTeam && Number(p.id) === Number(playerId))));
+      setXi(old => old.filter(p => !(p.team_key === myTeam && Number(p.id) === Number(playerId))));
     } else if (selectedXI.length < 11) {
       const player = mySquad.find(p => Number(p.id) === Number(playerId));
-      if (player) setXi(old => [...old, { ...player, team_key: xiTeam, position: selectedXI.length + 1 }]);
+      if (player && !isIndian(player.nationality) && selectedXI.filter(p => !isIndian(p.nationality)).length >= 4) {
+        setNotice("A Playing XI can include a maximum of 4 overseas players.");
+        return;
+      }
+      if (player) setXi(old => [...old, { ...player, team_key: myTeam, position: selectedXI.length + 1 }]);
     } else {
       setNotice("Playing XI is limited to 11 players.");
     }
@@ -780,7 +789,12 @@ export default function App() {
             </div>
           </div>
         </section>
-        {notice && <Notice message={notice} onClose={() => setNotice("")} />}
+        {saleToast && <div className={`ar-sale-toast ${saleToast.status}`} style={{ "--team-color": teamInfo(saleToast.teamKey)?.color || "#526b91" }} role="status">
+        <span className="ar-sale-mark">{saleToast.status === "sold" ? "✓" : "—"}</span>
+        <span><b>{saleToast.status === "sold" ? "SOLD" : "UNSOLD"}</b><small>{saleToast.playerName}{saleToast.status === "sold" ? ` · ${saleToast.teamName}` : " · No bids"}</small></span>
+        <button onClick={() => setSaleToast(null)} aria-label="Dismiss sale notification">×</button>
+      </div>}
+      {notice && <Notice message={notice} onClose={() => setNotice("")} />}
       </main>
     );
   }
@@ -834,7 +848,12 @@ export default function App() {
           )}
         </footer>
 
-        {notice && <Notice message={notice} onClose={() => setNotice("")} />}
+        {saleToast && <div className={`ar-sale-toast ${saleToast.status}`} style={{ "--team-color": teamInfo(saleToast.teamKey)?.color || "#526b91" }} role="status">
+        <span className="ar-sale-mark">{saleToast.status === "sold" ? "✓" : "—"}</span>
+        <span><b>{saleToast.status === "sold" ? "SOLD" : "UNSOLD"}</b><small>{saleToast.playerName}{saleToast.status === "sold" ? ` · ${saleToast.teamName}` : " · No bids"}</small></span>
+        <button onClick={() => setSaleToast(null)} aria-label="Dismiss sale notification">×</button>
+      </div>}
+      {notice && <Notice message={notice} onClose={() => setNotice("")} />}
       </main>
     );
   }
@@ -889,7 +908,7 @@ export default function App() {
   });
 
   return (
-    <main ref={barRef} className={`ar-app ${auction.status === "ended" ? "is-ended" : ""}`}>
+    <main ref={barRef} className={`ar-app ${auction.status === "ended" ? "is-ended" : ""} ${tab === "sets" ? "sets-expanded" : ""}`}>
       <div className="ar-timebar" aria-hidden="true"><i data-tp /></div>
       <div className="ar-bar">
       <header className="ar-top">
@@ -1058,24 +1077,20 @@ export default function App() {
         {tab === "xi" && auction.status === "ended" && (
           <div className="ar-panel">
             <div className="ar-xi-controls">
-              <label>Franchise
-                <select value={xiTeam} onChange={e => setXiTeam(e.target.value)}>
-                  {TEAMS.map(t => <option key={t.key} value={t.key}>{t.name}</option>)}
-                </select>
-              </label>
+              <strong>{teamInfo(myTeam)?.name || "Your team"} · Playing XI</strong>
               <span>{selectedXI.length}/11 selected</span>
             </div>
             <div className="ar-xi-list">
-              {myTeam === xiTeam || isHost ? squads.filter(p => p.team_key === xiTeam).map(player => (
+              {myTeam ? mySquad.map(player => (
                 <label className="ar-xi-player" key={player.id}>
                   <input type="checkbox" checked={selectedXI.some(p => Number(p.id) === Number(player.id))} onChange={() => toggleXI(player.id)} />
                   <span><b>{player.name}</b><small>{player.role || "Role unavailable"}{!isIndian(player.nationality) ? " · ✈️ Overseas" : ""}</small></span>
                   <strong>{money(player.purchase_price_paise)}</strong>
                 </label>
-              )) : <p className="ar-empty">You can edit your own team's Playing XI. The host can manage all teams.</p>}
-              {!squads.some(p => p.team_key === xiTeam) && <p className="ar-empty">Buy players for this franchise before creating its XI.</p>}
+              )) : <p className="ar-empty">Select your team in the lobby to build your Playing XI.</p>}
+              {myTeam && !mySquad.length && <p className="ar-empty">Your team has no purchased players yet.</p>}
             </div>
-            <button className="ar-save" disabled={!(myTeam === xiTeam || isHost)} onClick={saveXI}>Save Playing XI</button>
+            <button className="ar-save" disabled={!myTeam} onClick={saveXI}>Save Playing XI</button>
           </div>
         )}
 
@@ -1106,6 +1121,11 @@ export default function App() {
         )}
       </section>
 
+      {saleToast && <div className={`ar-sale-toast ${saleToast.status}`} style={{ "--team-color": teamInfo(saleToast.teamKey)?.color || "#526b91" }} role="status">
+        <span className="ar-sale-mark">{saleToast.status === "sold" ? "✓" : "—"}</span>
+        <span><b>{saleToast.status === "sold" ? "SOLD" : "UNSOLD"}</b><small>{saleToast.playerName}{saleToast.status === "sold" ? ` · ${saleToast.teamName}` : " · No bids"}</small></span>
+        <button onClick={() => setSaleToast(null)} aria-label="Dismiss sale notification">×</button>
+      </div>}
       {notice && <Notice message={notice} onClose={() => setNotice("")} />}
     </main>
   );
