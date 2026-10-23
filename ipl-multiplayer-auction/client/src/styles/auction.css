@@ -543,3 +543,65 @@ html:has(.ar-app) #root { height: 100%; overflow: hidden; }
   .ar-endbanner span { font-size: 15px; }
   .ar-teamtag { height: 42px; max-width: 260px; }
 }
+
+/* Matte blue-black refresh: quieter surfaces, no ambient neon glow. */
+.ar-app {
+  --ar-line: #27364c;
+  --ar-line-soft: #202d40;
+  --ar-cyan: #8aa7d0;
+  --ar-blue: #52729b;
+  --ar-muted: #94a2b8;
+  background: #080d15;
+  color: #e5ebf4;
+  max-width: 760px;
+}
+.ar-app::before { display: none !important; }
+.ar-app .ar-card,
+.ar-app .ar-settings,
+.ar-app .ar-panel,
+.ar-app .ar-squad,
+.ar-app .ar-set,
+.ar-app .ar-bidbox {
+  background: #101824 !important;
+  border: 1px solid #263448 !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+.ar-app .ar-logo,
+.ar-app .ar-brand em,
+.ar-app .ar-status.on,
+.ar-app .ar-tabs button.active { color: #9ab5d9; }
+.ar-app button { box-shadow: none !important; text-shadow: none !important; }
+.ar-app button:hover:not(:disabled) { filter: brightness(1.12); }
+.ar-app .ar-bid { background: #29476b !important; border: 1px solid #45678e !important; color: #f5f8fc !important; }
+.ar-app .ar-bid:hover:not(:disabled) { background: #35577e !important; }
+.ar-app .ar-timer.urgent { color: #e6b3a9; }
+.ar-app .ar-chip, .ar-app .ar-teamtag { box-shadow: none !important; }
+.ar-app .ar-lower { min-height: 260px; }
+.ar-app .ar-tabs { border-bottom-color: #27364c; }
+.ar-app .ar-tabs button { color: #9aa9bd; }
+.ar-app .ar-tabs button.active { background: #1b293b; border-color: #354b66; color: #e8eef7; }
+.ar-app .ar-sale-toast {
+  position: fixed; z-index: 120; right: max(16px, calc((100vw - 760px) / 2 + 16px)); top: 66px;
+  display: flex; align-items: center; gap: 10px; width: min(300px, calc(100vw - 32px));
+  padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--team-color) 65%, #27364c);
+  border-left: 3px solid var(--team-color); border-radius: 9px; background: #121b28;
+  color: #edf3fb; box-shadow: 0 8px 28px #0006;
+}
+.ar-app .ar-sale-mark { display: grid; place-items: center; width: 27px; height: 27px; flex: 0 0 27px; border-radius: 6px; background: color-mix(in srgb, var(--team-color) 22%, #101824); color: var(--team-color); font-weight: 900; }
+.ar-app .ar-sale-toast > span:nth-child(2) { display: grid; gap: 2px; min-width: 0; }
+.ar-app .ar-sale-toast b { font-size: 11px; letter-spacing: .12em; }
+.ar-app .ar-sale-toast small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: #aebbd0; }
+.ar-app .ar-sale-toast button { margin-left: auto; border: 0; background: transparent; color: #9eacc0; font-size: 20px; cursor: pointer; }
+.ar-app.sets-expanded { max-width: 1180px; }
+.ar-app.sets-expanded .ar-lower { min-height: 58vh; }
+.ar-app.sets-expanded .ar-panel { min-height: 46vh; }
+.ar-app.sets-expanded .ar-sets { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.ar-app.sets-expanded .ar-set { min-width: 0; }
+.ar-app.sets-expanded .ar-set-players { max-height: 300px; overflow: auto; }
+@media (max-width: 720px) {
+  .ar-app { max-width: 100%; }
+  .ar-app.sets-expanded { max-width: 100%; }
+  .ar-app.sets-expanded .ar-sets { grid-template-columns: 1fr; }
+  .ar-app .ar-sale-toast { right: 12px; top: 58px; }
+}
