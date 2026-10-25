@@ -2,33 +2,28 @@
    Loaded after app.css so it overrides the older gold palette. */
 
 :root {
-  --bg: #01040c;
-  --panel: #050e26;
-  --panel2: #08183a;
-  --line: rgba(130, 170, 255, 0.18);
-  --text: #eaf1ff;
-  --muted: #8fa6cf;
-  --gold: #4aa8ff;       /* legacy var: now the accent blue */
-  --gold-dark: #2f6bff;
-  --green: #19d9a0;
-  --red: #ff4d6a;
+  --bg: #080b11;
+  --panel: #0d121b;
+  --panel2: #121927;
+  --line: #1c2434;
+  --text: #e4e9f2;
+  --muted: #7c8aa5;
+  --gold: #6b9be0;       /* legacy var: now the accent blue */
+  --gold-dark: #3f6fc4;
+  --green: #4bb38c;
+  --red: #d9596e;
 
-  --glass: linear-gradient(180deg, rgba(24, 46, 104, 0.3), rgba(4, 11, 32, 0.58));
-  --glass-solid: rgba(5, 13, 36, 0.78);
-  --glass-edge: rgba(120, 160, 240, 0.15);
-  --glass-inset: rgba(255, 255, 255, 0.08);
-  --glass-shadow: 0 14px 44px -14px rgba(0, 0, 0, 0.8), 0 0 30px -14px rgba(47, 107, 255, 0.4);
-  --accent: #4aa8ff;
-  --accent-2: #2f6bff;
-  --accent-deep: #1d46d8;
+  --glass: #0d121b;
+  --glass-solid: #0d121b;
+  --glass-edge: #1c2434;
+  --glass-inset: transparent;
+  --glass-shadow: none;
+  --accent: #6b9be0;
+  --accent-2: #3f6fc4;
+  --accent-deep: #3a68c2;
   font-family: "Manrope", "DM Sans", system-ui, sans-serif;
   color: var(--text);
-  background:
-    radial-gradient(60% 48% at 10% -6%, rgba(47, 107, 255, 0.27), transparent 70%),
-    radial-gradient(48% 42% at 96% 8%, rgba(98, 84, 255, 0.16), transparent 70%),
-    radial-gradient(60% 55% at 50% 112%, rgba(14, 124, 255, 0.14), transparent 70%),
-    #01040c;
-  background-attachment: fixed;
+  background: #080b11;
 }
 
 body, #root { background: transparent; }
@@ -41,17 +36,16 @@ input, select {
   border-radius: 12px;
 }
 input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: transparent; }
-input::placeholder { color: #6f86b3; }
+input::placeholder { color: #5f6c86; }
 
 .primary-button {
   color: #fff;
-  background: linear-gradient(180deg, #3d87ff 0%, #1d46d8 100%);
-  border: 1px solid rgba(150, 190, 255, 0.35);
+  background: #3a68c2;
+  border: 1px solid rgba(255, 255, 255, 0.35);
   border-radius: 12px;
   font-weight: 800;
-  box-shadow: 0 8px 26px -8px rgba(47, 107, 255, 0.9), inset 0 1px 0 rgba(255, 255, 255, 0.3);
-}
-.primary-button:hover:not(:disabled) { background: linear-gradient(180deg, #5399ff 0%, #2a55ea 100%); }
+  }
+.primary-button:hover:not(:disabled) { background: #2a55ea; }
 .secondary-button {
   color: var(--text);
   background: rgba(255, 255, 255, 0.05);
@@ -66,20 +60,16 @@ input::placeholder { color: #6f86b3; }
   border: 1px solid var(--glass-edge);
 }
 .toast {
-  color: #dcebff;
+  color: #d5deee;
   background: rgba(3, 10, 30, 0.92);
   border: 1px solid var(--glass-edge);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  box-shadow: var(--glass-shadow);
-}
+  }
 .eyebrow { color: var(--accent); }
 .brand-mark {
   color: var(--accent);
-  background: rgba(74, 168, 255, 0.12);
-  border: 1px solid rgba(74, 168, 255, 0.38);
-  box-shadow: 0 0 22px -6px rgba(47, 107, 255, 0.8);
-}
+  background: rgba(107, 155, 224, 0.12);
+  border: 1px solid rgba(107, 155, 224, 0.38);
+  }
 .home-brand .gold, .gold { color: var(--accent); }
 
 /* bid timer picker (host): used in lobby footer and the in-room settings menu */
@@ -89,7 +79,7 @@ input::placeholder { color: #6f86b3; }
   font: inherit; font-size: 13.5px; font-weight: 700; color: var(--muted); background: transparent;
 }
 .ar-timer-pick button:hover { color: #fff; }
-.ar-timer-pick button.active { color: #fff; background: linear-gradient(180deg, #3d87ff, #1d46d8); box-shadow: 0 4px 14px -4px rgba(47, 107, 255, 0.9); }
+.ar-timer-pick button.active { color: #fff; background: #3a68c2; }
 .ar-timer-pick button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* ---------- home: one screen, no scrolling ---------- */
@@ -114,10 +104,10 @@ input::placeholder { color: #6f86b3; }
   line-height: 1.04;
 }
 .home-hero h1 span {
-  background: linear-gradient(90deg, #6cc1ff, #3b82ff);
-  -webkit-background-clip: text; background-clip: text; color: transparent;
+  background: #6b9be0;
+  color: var(--accent);
 }
-.home-hero > .muted { margin: 0 0 clamp(12px, 3vh, 26px); color: #8fb0e8; font-size: clamp(14px, 1.6vw, 17px); }
+.home-hero > .muted { margin: 0 0 clamp(12px, 3vh, 26px); color: #7c8aa5; font-size: clamp(14px, 1.6vw, 17px); }
 .home-entry {
   width: min(100%, 760px);
   margin: 0;
@@ -126,18 +116,15 @@ input::placeholder { color: #6f86b3; }
   background: var(--glass);
   border: 1px solid var(--glass-edge);
   border-radius: 24px;
-  box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-inset);
-  backdrop-filter: blur(22px) saturate(150%);
-  -webkit-backdrop-filter: blur(22px) saturate(150%);
-}
-.home-entry > label, .home-card-simple label { color: #b4c8f0; font-size: 12px; font-weight: 700; }
+  }
+.home-entry > label, .home-card-simple label { color: #a9b6cf; font-size: 12px; font-weight: 700; }
 .home-entry input { min-height: 46px; padding: 0 14px; }
 .home-grid-simple { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .home-card, .home-card-simple {
   gap: 8px;
   padding: 12px;
   background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(140, 178, 255, 0.14);
+  border: 1px solid rgba(110, 130, 175, 0.14);
   border-radius: 16px;
 }
 .home-card-simple:first-child { justify-content: center; }
@@ -185,21 +172,17 @@ input::placeholder { color: #6f86b3; }
   background: var(--glass);
   border: 1px solid var(--glass-edge);
   border-radius: 20px;
-  box-shadow: inset 0 1px 0 var(--glass-inset);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
   overflow: hidden;
 }
 .team-card:hover:not(:disabled) { border-color: var(--team-color, var(--accent)); background: color-mix(in srgb, var(--team-color, var(--accent)) 14%, rgba(14, 30, 72, 0.6)); }
-.team-card.selected { border-color: var(--team-color); box-shadow: 0 0 28px -8px var(--team-color), inset 0 0 0 1px var(--team-color); background: color-mix(in srgb, var(--team-color) 16%, rgba(14, 30, 72, 0.6)); }
+.team-card.selected { border-color: var(--team-color); background: color-mix(in srgb, var(--team-color) 16%, rgba(14, 30, 72, 0.6)); }
 .team-card.claimed:not(.selected) { opacity: 0.55; }
 .team-logo {
   width: clamp(38px, 6.4vh, 60px); height: clamp(38px, 6.4vh, 60px); flex: none;
   font-size: clamp(11px, 1.7vh, 15px);
-  color: #fff; background: color-mix(in srgb, var(--team-color, var(--accent)) 38%, #071230);
+  color: #fff; background: color-mix(in srgb, var(--team-color, var(--accent)) 38%, #0e131d);
   border: 1.5px solid var(--team-color, var(--accent));
-  box-shadow: 0 0 20px -4px var(--team-color, var(--accent));
-}
+  }
 .team-copy { flex: 0 0 auto; min-width: 0; display: grid; gap: 2px; }
 .team-copy b { font-size: clamp(12px, 1.9vh, 15px); line-height: 1.2; }
 .team-copy small { font-size: clamp(10.5px, 1.5vh, 12.5px); color: var(--muted); line-height: 1.25; }
