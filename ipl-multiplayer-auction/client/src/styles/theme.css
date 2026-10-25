@@ -104,8 +104,9 @@ input::placeholder { color: #5f6c86; }
   line-height: 1.04;
 }
 .home-hero h1 span {
-  background: #6b9be0;
-  color: var(--accent);
+  display: inline;
+  background: transparent;
+  color: #6b9be0;
 }
 .home-hero > .muted { margin: 0 0 clamp(12px, 3vh, 26px); color: #7c8aa5; font-size: clamp(14px, 1.6vw, 17px); }
 .home-entry {
