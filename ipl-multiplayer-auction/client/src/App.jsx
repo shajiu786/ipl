@@ -4,7 +4,7 @@ import { io } from "socket.io-client";
 import {
   ArrowRight, Check, Clipboard, Crown, Gavel, Layers, ListOrdered,
   MessageCircle, Mic, MicOff, Pause, Play, Radio, Send, Trophy,
-  Users, Wallet, X, Volume2, VolumeX, Settings, ChevronDown, ChevronRight, ChevronUp, Timer, Flag
+  Users, Wallet, X, Volume2, VolumeX, Settings, ChevronDown, ChevronRight, ChevronUp, Timer, Flag, ArrowLeft
 } from "lucide-react";
 import "./styles/app.css";
 import "./styles/theme.css";
@@ -134,19 +134,23 @@ export default function App() {
   const [purses, setPurses] = useState([]);
   const [squads, setSquads] = useState([]);
   const [xi, setXi] = useState([]);
-  const [xiTeam, setXiTeam] = useState(null);
-  const [saleToast, setSaleToast] = useState(null);
   const [playerSearch, setPlayerSearch] = useState("");
   const [setsFilter, setSetsFilter] = useState("all");
-  const [soundOn, setSoundOn] = useState(true);
+  const [soundOn, setSoundOn] = useState(() => {
+    try { return localStorage.getItem("ar-sound") !== "off"; } catch { return true; }
+  });
+  const soundOnRef = useRef(soundOn);
+  const [salePop, setSalePop] = useState(null);
   const [micOn, setMicOn] = useState(false);
   const [voiceJoined, setVoiceJoined] = useState(false);
   const [muted, setMuted] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [voicePeers, setVoicePeers] = useState(0);
+  const [voiceDebug, setVoiceDebug] = useState([]);
 
   const socketRef = useRef(null);
   const barRef = useRef(null);
+  const dbgRef = useRef({});
   const audioRef = useRef(null);
   const localStreamRef = useRef(null);
   const peersRef = useRef({});
@@ -169,7 +173,8 @@ export default function App() {
 
   const myPurse = purses.find(p => p.team_key === myTeam);
   const mySquad = squads.filter(p => p.team_key === myTeam);
-  const selectedXI = xi.filter(p => p.team_key === myTeam);
+  const xiTeam = myTeam || "";
+  const selectedXI = xi.filter(p => p.team_key === xiTeam);
 
   const filteredPlayers = players.filter(p =>
     `${p.name || ""} ${p.role || ""}`.toLowerCase().includes(playerSearch.toLowerCase())
@@ -219,8 +224,14 @@ export default function App() {
     }
   }, []);
 
+  // The socket handlers are created once on room entry, so they read the live setting through a ref.
+  useEffect(() => {
+    soundOnRef.current = soundOn;
+    try { localStorage.setItem("ar-sound", soundOn ? "on" : "off"); } catch {}
+  }, [soundOn]);
+
   const playTone = useCallback((frequency = 660) => {
-    if (!soundOn) return;
+    if (!soundOnRef.current) return;
     try {
       const AudioContextClass = window.AudioContext || window.webkitAudioContext;
       if (!AudioContextClass) return;
@@ -236,7 +247,7 @@ export default function App() {
       oscillator.stop(context.currentTime + 0.25);
       oscillator.onended = () => context.close();
     } catch {}
-  }, [soundOn]);
+  }, []);
 
   const enterRoom = useCallback(async (code, p) => {
     socketRef.current?.disconnect();
@@ -273,15 +284,28 @@ export default function App() {
     const sendVoiceSignal = (targetSocketId, signal) => {
       socket.emit("voice:signal", { targetSocketId, signal });
     };
+    const refreshDebug = () => setVoiceDebug(Object.entries(dbgRef.current).map(([id, d]) => ({ id: id.slice(0, 4), ...d, types: [...d.types] })));
     const createVoicePeer = async (targetSocketId, shouldOffer = false) => {
       if (!targetSocketId || targetSocketId === socket.id || peersRef.current[targetSocketId]) return;
       const stream = localStreamRef.current;
       if (!stream) return;
       const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
       peersRef.current[targetSocketId] = pc;
+      dbgRef.current[targetSocketId] = { conn: "new", ice: "new", types: new Set(), err: "" };
+      refreshDebug();
       stream.getTracks().forEach(track => pc.addTrack(track, stream));
       pc.onicecandidate = event => {
-        if (event.candidate) sendVoiceSignal(targetSocketId, { candidate: event.candidate });
+        if (event.candidate) {
+          const kind = /typ (\w+)/.exec(event.candidate.candidate || "");
+          if (kind && dbgRef.current[targetSocketId]) { dbgRef.current[targetSocketId].types.add(kind[1]); refreshDebug(); }
+          sendVoiceSignal(targetSocketId, { candidate: event.candidate });
+        }
+      };
+      pc.oniceconnectionstatechange = () => {
+        if (dbgRef.current[targetSocketId]) { dbgRef.current[targetSocketId].ice = pc.iceConnectionState; refreshDebug(); }
+      };
+      pc.onicecandidateerror = event => {
+        if (dbgRef.current[targetSocketId]) { dbgRef.current[targetSocketId].err = `${event.errorCode || ""} ${event.url || ""}`.trim(); refreshDebug(); }
       };
       pc.ontrack = event => {
         let audio = document.getElementById(`voice-audio-${targetSocketId}`);
@@ -290,11 +314,9 @@ export default function App() {
           audio.id = `voice-audio-${targetSocketId}`;
           audio.autoplay = true;
           audio.playsInline = true;
-          audio.muted = false;
           audio.style.display = "none";
           document.body.appendChild(audio);
         }
-        audio.muted = false;
         audio.srcObject = event.streams[0];
         audio.play().catch(() => {
           setNotice("Tap anywhere once to hear voice chat.");
@@ -310,6 +332,7 @@ export default function App() {
       };
       pc.onconnectionstatechange = () => {
         const state = pc.connectionState;
+        if (dbgRef.current[targetSocketId]) { dbgRef.current[targetSocketId].conn = state; refreshDebug(); }
         setVoicePeers(Object.values(peersRef.current).filter(p => p.connectionState === "connected").length);
         if (state === "failed" || state === "closed") dropPeer();
         // "disconnected" is often a brief network blip: give it a few seconds to recover.
@@ -361,6 +384,8 @@ export default function App() {
       peersRef.current[peerId]?.close();
       delete peersRef.current[peerId];
       delete pendingIceRef.current[peerId];
+      delete dbgRef.current[peerId];
+      refreshDebug();
       document.getElementById(`voice-audio-${peerId}`)?.remove();
     });
 
@@ -377,7 +402,6 @@ export default function App() {
     });
     socket.on("bid:accepted", event => {
       setBids(old => [event.bid, ...old].slice(0, 100));
-      setNotice(`${event.participantName || "A participant"} placed a bid`);
       playTone(760);
     });
     socket.on("chat:message", message => setMessages(old => [...old, message]));
@@ -398,7 +422,14 @@ export default function App() {
         team_key: event?.teamKey || event?.team_key || null,
         created_at: new Date().toISOString()
       }, ...old].slice(0, 100));
-      setSaleToast({ status: isUnsold ? "unsold" : "sold", playerName: event?.playerName || "Player", teamKey: event?.teamKey || event?.team_key || null, teamName: team || "Winning team" });
+      setSalePop({
+        id: Date.now(),
+        kind: isUnsold ? "unsold" : "sold",
+        player: event?.playerName || "Player",
+        teamKey: event?.teamKey || event?.team_key || null,
+        teamName: team || "",
+        amountPaise: event?.amountPaise || 0
+      });
       playTone(isUnsold ? 420 : 880);
     });
 
@@ -415,7 +446,7 @@ export default function App() {
     socket.on("connect_error", () => setNotice("Connection issue. Retrying…"));
 
     await Promise.all([loadRoomData(code), loadPlayers()]);
-  }, [loadPlayers, loadRoomData, playTone, soundOn]);
+  }, [loadPlayers, loadRoomData, playTone]);
 
   useEffect(() => () => {
     socketRef.current?.disconnect();
@@ -472,6 +503,12 @@ export default function App() {
     }
     return () => cancelAnimationFrame(raf);
   }, [page, auction.status, auction.deadline, auction.auctionVersion, auction.pausedRemainingMs, duration]);
+
+  useEffect(() => {
+    if (!salePop) return undefined;
+    const timer = setTimeout(() => setSalePop(null), 3600);
+    return () => clearTimeout(timer);
+  }, [salePop]);
 
   // When the host ends the auction, everyone lands on the full squads view.
   useEffect(() => {
@@ -578,7 +615,7 @@ export default function App() {
         }
         if (response.state) setAuction(response.state);
         if (onSuccess) onSuccess(response);
-        else setNotice(nextAction === "start" ? "Auction started" : "Auction updated");
+        else if (!["sell", "unsold", "next-player", "pause", "resume"].includes(nextAction)) setNotice(nextAction === "start" ? "Auction started" : "Auction updated");
       });
     };
 
@@ -601,7 +638,7 @@ export default function App() {
 
     sendAction(action, payload, () => {
       if (action === "start" || action === "resume") setPage("auction");
-      setNotice(action === "start" ? "Auction started" : "Auction updated");
+      if (!["sell", "unsold", "next-player", "pause", "resume"].includes(action)) setNotice(action === "start" ? "Auction started" : "Auction updated");
     });
   };
 
@@ -650,6 +687,8 @@ export default function App() {
       localStreamRef.current?.getTracks().forEach(track => track.stop());
       localStreamRef.current = null;
       socketRef.current?.emit("voice:leave");
+      dbgRef.current = {};
+      setVoiceDebug([]);
       setVoiceJoined(false);
       setVoicePeers(0);
       setMicOn(false);
@@ -687,11 +726,10 @@ export default function App() {
   };
 
   const saveXI = async () => {
-    if (!myTeam) { setNotice("Select your team before building a Playing XI."); return; }
     try {
       await api.put(`/api/rooms/${roomCode}/playing-xi`, {
         participantId,
-        teamKey: myTeam,
+        teamKey: xiTeam,
         playerIds: selectedXI.map(p => Number(p.id))
       });
       setNotice("Playing XI saved");
@@ -701,23 +739,13 @@ export default function App() {
     }
   };
 
-  useEffect(() => {
-    if (!saleToast) return;
-    const timer = setTimeout(() => setSaleToast(null), 3200);
-    return () => clearTimeout(timer);
-  }, [saleToast]);
-
   const toggleXI = playerId => {
     const already = selectedXI.some(p => Number(p.id) === Number(playerId));
     if (already) {
-      setXi(old => old.filter(p => !(p.team_key === myTeam && Number(p.id) === Number(playerId))));
+      setXi(old => old.filter(p => !(p.team_key === xiTeam && Number(p.id) === Number(playerId))));
     } else if (selectedXI.length < 11) {
       const player = mySquad.find(p => Number(p.id) === Number(playerId));
-      if (player && !isIndian(player.nationality) && selectedXI.filter(p => !isIndian(p.nationality)).length >= 4) {
-        setNotice("A Playing XI can include a maximum of 4 overseas players.");
-        return;
-      }
-      if (player) setXi(old => [...old, { ...player, team_key: myTeam, position: selectedXI.length + 1 }]);
+      if (player) setXi(old => [...old, { ...player, team_key: xiTeam, position: selectedXI.length + 1 }]);
     } else {
       setNotice("Playing XI is limited to 11 players.");
     }
@@ -789,12 +817,7 @@ export default function App() {
             </div>
           </div>
         </section>
-        {saleToast && <div className={`ar-sale-toast ${saleToast.status}`} style={{ "--team-color": teamInfo(saleToast.teamKey)?.color || "#526b91" }} role="status">
-        <span className="ar-sale-mark">{saleToast.status === "sold" ? "✓" : "—"}</span>
-        <span><b>{saleToast.status === "sold" ? "SOLD" : "UNSOLD"}</b><small>{saleToast.playerName}{saleToast.status === "sold" ? ` · ${saleToast.teamName}` : " · No bids"}</small></span>
-        <button onClick={() => setSaleToast(null)} aria-label="Dismiss sale notification">×</button>
-      </div>}
-      {notice && <Notice message={notice} onClose={() => setNotice("")} />}
+        {notice && <Notice message={notice} onClose={() => setNotice("")} />}
       </main>
     );
   }
@@ -848,12 +871,7 @@ export default function App() {
           )}
         </footer>
 
-        {saleToast && <div className={`ar-sale-toast ${saleToast.status}`} style={{ "--team-color": teamInfo(saleToast.teamKey)?.color || "#526b91" }} role="status">
-        <span className="ar-sale-mark">{saleToast.status === "sold" ? "✓" : "—"}</span>
-        <span><b>{saleToast.status === "sold" ? "SOLD" : "UNSOLD"}</b><small>{saleToast.playerName}{saleToast.status === "sold" ? ` · ${saleToast.teamName}` : " · No bids"}</small></span>
-        <button onClick={() => setSaleToast(null)} aria-label="Dismiss sale notification">×</button>
-      </div>}
-      {notice && <Notice message={notice} onClose={() => setNotice("")} />}
+        {notice && <Notice message={notice} onClose={() => setNotice("")} />}
       </main>
     );
   }
@@ -908,7 +926,7 @@ export default function App() {
   });
 
   return (
-    <main ref={barRef} className={`ar-app ${auction.status === "ended" ? "is-ended" : ""} ${tab === "sets" ? "sets-expanded" : ""}`}>
+    <main ref={barRef} className={`ar-app ${auction.status === "ended" ? "is-ended" : ""} ${tab === "sets" && auction.status !== "ended" ? "is-big" : ""}`}>
       <div className="ar-timebar" aria-hidden="true"><i data-tp /></div>
       <div className="ar-bar">
       <header className="ar-top">
@@ -930,6 +948,20 @@ export default function App() {
         <div className="ar-settings" role="menu">
           <button onClick={() => setSoundOn(v => !v)}>{soundOn ? <Volume2 size={17} /> : <VolumeX size={17} />} Auction sounds <b>{soundOn ? "On" : "Off"}</b></button>
           <button onClick={startVoice}><Radio size={17} /> Voice chat <b>{voiceJoined ? `Leave · ${voicePeers} linked` : "Join"}</b></button>
+          {voiceJoined && (
+            <div className="ar-voice-debug">
+              <b>Voice status</b>
+              {!voiceDebug.length && <span>No other player is in voice yet. Everyone must tap Join.</span>}
+              {voiceDebug.map(d => (
+                <span key={d.id} className={d.conn === "connected" ? "ok" : d.conn === "failed" || d.ice === "failed" ? "bad" : ""}>
+                  Player {d.id}: {d.conn} · route {d.types.join("/") || "searching"}{d.err ? ` · error ${d.err}` : ""}
+                </span>
+              ))}
+              {voiceDebug.some(d => d.conn === "failed" || d.ice === "failed" || (d.conn !== "connected" && d.ice === "checking" && !d.types.includes("relay") && d.err)) && (
+                <em>The relay (TURN) isn't reachable. Add your own TURN credentials in VITE_ICE_SERVERS.</em>
+              )}
+            </div>
+          )}
           <button disabled={!voiceJoined} onClick={() => {
             const nextMuted = !muted;
             localStreamRef.current?.getAudioTracks().forEach(track => { track.enabled = !nextMuted; });
@@ -1013,7 +1045,12 @@ export default function App() {
       <section className="ar-card ar-feed" aria-label="Live bids">
         <header>
           <span className="ar-feed-title"><i />LIVE BIDS</span>
-          <small>Recent activity</small>
+          <span className="ar-feed-tools">
+            <small>Recent activity</small>
+            <button className={`ar-sound ${soundOn ? "" : "off"}`} onClick={() => setSoundOn(v => !v)} aria-label={soundOn ? "Turn auction sounds off" : "Turn auction sounds on"} title={soundOn ? "Sounds on" : "Sounds off"}>
+              {soundOn ? <Volume2 size={16} /> : <VolumeX size={16} />}
+            </button>
+          </span>
         </header>
         <ul>
           {visibleFeed.map(item => item.kind === "bid" ? (
@@ -1034,6 +1071,15 @@ export default function App() {
       </section>
 
       <section className="ar-card ar-lower" id="ar-lower">
+        {tab === "sets" && !ended && (
+          <div className="ar-strip">
+            <button className="ar-strip-back" onClick={() => setTab("messages")}><ArrowLeft size={16} /> Auction</button>
+            <span className="ar-strip-name">{currentPlayer?.name || "Waiting…"}</span>
+            <b className="ar-strip-bid-amt">{money(auction.currentBidPaise)}</b>
+            <b data-tp className="ar-strip-time">{String(Math.floor(remaining / 60)).padStart(2, "0")}:{String(remaining % 60).padStart(2, "0")}</b>
+            <button className="ar-strip-bid" disabled={bidDisabled} onClick={placeBid}>BID {money(nextBid)}</button>
+          </div>
+        )}
         {ended && (
           <div className="ar-endbanner">
             <Trophy size={20} /><b>Auction complete</b>
@@ -1076,21 +1122,27 @@ export default function App() {
 
         {tab === "xi" && auction.status === "ended" && (
           <div className="ar-panel">
-            <div className="ar-xi-controls">
-              <strong>{teamInfo(myTeam)?.name || "Your team"} · Playing XI</strong>
-              <span>{selectedXI.length}/11 selected</span>
-            </div>
-            <div className="ar-xi-list">
-              {myTeam ? mySquad.map(player => (
-                <label className="ar-xi-player" key={player.id}>
-                  <input type="checkbox" checked={selectedXI.some(p => Number(p.id) === Number(player.id))} onChange={() => toggleXI(player.id)} />
-                  <span><b>{player.name}</b><small>{player.role || "Role unavailable"}{!isIndian(player.nationality) ? " · ✈️ Overseas" : ""}</small></span>
-                  <strong>{money(player.purchase_price_paise)}</strong>
-                </label>
-              )) : <p className="ar-empty">Select your team in the lobby to build your Playing XI.</p>}
-              {myTeam && !mySquad.length && <p className="ar-empty">Your team has no purchased players yet.</p>}
-            </div>
-            <button className="ar-save" disabled={!myTeam} onClick={saveXI}>Save Playing XI</button>
+            {myTeam ? (
+              <>
+                <div className="ar-xi-controls">
+                  <span className="ar-xi-team"><TeamChip teamKey={myTeam} /><b>{teamInfo(myTeam)?.name} · Playing XI</b></span>
+                  <span>{selectedXI.length}/11 selected</span>
+                </div>
+                <div className="ar-xi-list">
+                  {squads.filter(p => p.team_key === myTeam).map(player => (
+                    <label className="ar-xi-player" key={player.id}>
+                      <input type="checkbox" checked={selectedXI.some(p => Number(p.id) === Number(player.id))} onChange={() => toggleXI(player.id)} />
+                      <span><b>{player.name}</b><small>{player.role || "Role unavailable"}{!isIndian(player.nationality) ? " · ✈️ Overseas" : ""}</small></span>
+                      <strong>{money(player.purchase_price_paise)}</strong>
+                    </label>
+                  ))}
+                  {!squads.some(p => p.team_key === myTeam) && <p className="ar-empty">You haven't bought any players yet.</p>}
+                </div>
+                <button className="ar-save" onClick={saveXI}>Save Playing XI</button>
+              </>
+            ) : (
+              <p className="ar-empty">You didn't pick a team in the lobby, so there is no Playing XI to set.</p>
+            )}
           </div>
         )}
 
@@ -1121,11 +1173,17 @@ export default function App() {
         )}
       </section>
 
-      {saleToast && <div className={`ar-sale-toast ${saleToast.status}`} style={{ "--team-color": teamInfo(saleToast.teamKey)?.color || "#526b91" }} role="status">
-        <span className="ar-sale-mark">{saleToast.status === "sold" ? "✓" : "—"}</span>
-        <span><b>{saleToast.status === "sold" ? "SOLD" : "UNSOLD"}</b><small>{saleToast.playerName}{saleToast.status === "sold" ? ` · ${saleToast.teamName}` : " · No bids"}</small></span>
-        <button onClick={() => setSaleToast(null)} aria-label="Dismiss sale notification">×</button>
-      </div>}
+      {salePop && (
+        <div key={salePop.id} className={`ar-salepop ${salePop.kind}`} style={{ "--team-color": teamInfo(salePop.teamKey)?.color || "#6b7a99" }} role="status">
+          {salePop.kind === "sold" ? <TeamChip teamKey={salePop.teamKey} /> : <span className="ar-chip plain">—</span>}
+          <div>
+            <b>{salePop.kind === "sold" ? "SOLD" : "UNSOLD"}</b>
+            <span>{salePop.player}{salePop.kind === "sold" && salePop.teamName ? ` · ${salePop.teamName}` : ""}</span>
+          </div>
+          {salePop.kind === "sold" && <strong>{money(salePop.amountPaise)}</strong>}
+        </div>
+      )}
+
       {notice && <Notice message={notice} onClose={() => setNotice("")} />}
     </main>
   );
