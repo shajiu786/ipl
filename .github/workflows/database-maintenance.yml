@@ -1,13 +1,17 @@
+```yaml
 name: Database Maintenance
 
 on:
   workflow_dispatch:
     inputs:
-      apply_dedupe:
-        description: "Apply duplicate cleanup and enrich player data"
+      action:
+        description: "Choose the database task"
         required: true
-        type: boolean
-        default: false
+        type: choice
+        options:
+          - preview_duplicates
+          - enrich_players
+          - cleanup_and_enrich
 
 permissions:
   contents: read
@@ -28,24 +32,30 @@ jobs:
       - name: Run database maintenance
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          APPLY_DEDUPE: ${{ inputs.apply_dedupe }}
+          ACTION_CHOICE: ${{ inputs.action }}
         run: |
           set -e
 
           cd ipl-multiplayer-auction/server
-
           npm install --no-package-lock
 
           echo "Applying database schema..."
           npm run db:schema
 
-          if [ "$APPLY_DEDUPE" = "true" ]; then
+          if [ "$ACTION_CHOICE" = "preview_duplicates" ]; then
+            echo "Previewing duplicate cleanup..."
+            npm run dedupe:players
+          elif [ "$ACTION_CHOICE" = "enrich_players" ]; then
+            echo "Enriching player photos and statistics..."
+            npm run enrich:players
+          elif [ "$ACTION_CHOICE" = "cleanup_and_enrich" ]; then
             echo "Applying duplicate cleanup..."
             npm run dedupe:players -- --apply
 
             echo "Enriching player photos and statistics..."
             npm run enrich:players
           else
-            echo "Previewing duplicate cleanup..."
-            npm run dedupe:players
+            echo "Unknown action selected."
+            exit 1
           fi
+```
