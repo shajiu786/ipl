@@ -4,7 +4,7 @@ import { io } from "socket.io-client";
 import {
   ArrowRight, Check, Clipboard, Crown, Gavel, Layers, ListOrdered,
   MessageCircle, Mic, MicOff, Pause, Play, Radio, Send, Trophy,
-  Users, Wallet, X, Volume2, VolumeX, Settings, ChevronDown, ChevronRight, ChevronUp, Timer, Flag, ArrowLeft
+  Users, Wallet, X, Volume2, VolumeX, Settings, ChevronDown, ChevronRight, ChevronUp, Timer, Flag, ArrowLeft, Ban
 } from "lucide-react";
 import "./styles/app.css";
 import "./styles/theme.css";
@@ -60,6 +60,29 @@ function getError(error, fallback = "Something went wrong") {
   return error?.response?.data?.error || error?.message || fallback;
 }
 
+// second colour per franchise, used by the SOLD pop-up and confetti
+const TEAM_ACCENT = { csk: "#1f4ea1", mi: "#d4a24a", rcb: "#f2c94c", kkr: "#f0c24a", rr: "#2a4fa8", srh: "#111111", dc: "#d93a3a", pbks: "#c9ccd2", gt: "#c8a76a", lsg: "#e8a53a" };
+
+const MAX_SQUAD = 25;
+const PURSE_PAISE = 120000000000;
+const ERRORS = {
+  squad_full: "Squad full: you already own 25 players.",
+  insufficient_purse: "Not enough purse left for this bid.",
+  already_highest_bidder: "You already hold the highest bid.",
+  timer_expired: "Time is up for this player.",
+  price_changed: "The price just changed. Check the new bid.",
+  auction_not_active: "Bidding is not open right now.",
+  team_not_selected: "Pick a franchise in the lobby to bid.",
+  not_a_room_member: "You are not part of this room.",
+  bid_failed: "Bid failed. Please try again.",
+  no_valid_bid: "There is no bid to sell yet.",
+  player_already_settled: "That player is already settled.",
+  player_in_progress: "Finish the current player first.",
+  host_only: "Only the host can do that.",
+  no_players_remaining: "No players are left to auction."
+};
+const friendly = code => ERRORS[code] || code || "Something went wrong";
+
 const CITY = { csk: "Chennai", mi: "Mumbai", rcb: "Bengaluru", kkr: "Kolkata", rr: "Rajasthan", srh: "Hyderabad", dc: "Delhi", pbks: "Punjab", gt: "Gujarat", lsg: "Lucknow" };
 const FLAGS = { india: "🇮🇳", australia: "🇦🇺", england: "🇬🇧", "south africa": "🇿🇦", "new zealand": "🇳🇿", "west indies": "🏝️", afghanistan: "🇦🇫", "sri lanka": "🇱🇰", bangladesh: "🇧🇩" };
 const isIndian = n => !n || /india|indian|local/i.test(n);
@@ -71,18 +94,21 @@ const firstOf = (o, keys) => {
   }
   return null;
 };
-// Role-aware headline stats. Reads from players.source_data when those columns exist.
+// Role-aware headline stats. Uses the fetched IPL career stats (players.stats); falls back to CSV columns if present.
 function playerStats(p) {
-  const d = p?.source_data || {};
+  const st = p?.stats || {}, bat = st.bat || {}, bowl = st.bowl || {}, d = p?.source_data || {};
   const role = String(p?.role || "").toUpperCase();
-  const matches = firstOf(d, ["matches", "Matches", "mat", "ipl_matches", "iplMatches"]);
-  const runs = firstOf(d, ["runs", "Runs", "ipl_runs", "iplRuns"]);
-  const wkts = firstOf(d, ["wickets", "Wickets", "wkts", "ipl_wickets", "iplWickets"]);
-  const eco = firstOf(d, ["economy", "Economy", "eco", "Eco", "econ"]);
-  const sr = firstOf(d, ["strike_rate", "strikeRate", "sr", "SR", "Strike Rate"]);
-  if (role.includes("BOWL")) return [["Matches", matches], ["Wickets", wkts], ["Eco", eco]];
-  if (role.startsWith("AR") || role.includes("ALL")) return [["Matches", matches], ["Runs", runs], ["Wickets", wkts]];
-  return [["Matches", matches], ["Runs", runs], ["SR", sr]];
+  const num = (v, dp = 0) => (v === null || v === undefined || v === "" || Number.isNaN(Number(v)) ? null : Number(v).toFixed(dp));
+  const matches = num(st.matches) ?? firstOf(d, ["matches", "Matches", "mat", "ipl_matches"]);
+  const runs = num(bat.runs) ?? firstOf(d, ["runs", "Runs", "ipl_runs"]);
+  const avg = num(bat.avg, 1);
+  const sr = num(bat.sr, 1) ?? firstOf(d, ["strike_rate", "strikeRate", "sr", "SR"]);
+  const wkts = num(bowl.wkts) ?? firstOf(d, ["wickets", "Wickets", "wkts", "ipl_wickets"]);
+  const eco = num(bowl.econ, 2) ?? firstOf(d, ["economy", "Economy", "eco"]);
+  const bowlAvg = num(bowl.avg, 1);
+  if (role.includes("BOWL")) return [["Matches", matches], ["Wickets", wkts], ["Eco", eco], ["Avg", bowlAvg]];
+  if (role.startsWith("AR") || role.includes("ALL")) return [["Matches", matches], ["Runs", runs], ["SR", sr], ["Wkts", wkts]];
+  return [["Matches", matches], ["Runs", runs], ["Avg", avg], ["SR", sr]];
 }
 const clock = iso => iso ? new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }) : "";
 const clockShort = iso => iso ? new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
@@ -141,6 +167,8 @@ export default function App() {
   });
   const soundOnRef = useRef(soundOn);
   const [salePop, setSalePop] = useState(null);
+  const clearSale = useCallback(() => setSalePop(null), []);
+  const clearNotice = useCallback(() => setNotice(""), []);
   const [micOn, setMicOn] = useState(false);
   const [voiceJoined, setVoiceJoined] = useState(false);
   const [muted, setMuted] = useState(false);
@@ -164,12 +192,14 @@ export default function App() {
   const leadingTeam = teamInfo(auction.highestBidder?.teamKey);
   const duration = Math.min(10, Math.max(5, Number(auction.durationSeconds || room?.config?.durationSeconds || 10)));
 
+  // The server decides the next valid bid (opening bid = the player's base price) and sends it with every state.
   const nextBid = useMemo(() => {
+    if (auction.nextBidPaise) return Number(auction.nextBidPaise);
     const current = Number(auction.currentBidPaise || 0);
     return current === 0
-      ? Number(room?.config?.openingBidPaise || 200000000)
+      ? Number(currentPlayer?.base_price_paise || room?.config?.openingBidPaise || 200000000)
       : current + Number(room?.config?.incrementPaise || 250000000);
-  }, [auction.currentBidPaise, room?.config]);
+  }, [auction.nextBidPaise, auction.currentBidPaise, currentPlayer?.base_price_paise, room?.config]);
 
   const myPurse = purses.find(p => p.team_key === myTeam);
   const mySquad = squads.filter(p => p.team_key === myTeam);
@@ -265,7 +295,6 @@ export default function App() {
         participantId: p.participantId || p.participant_id
       }, response => {
         if (response?.ok) {
-          setNotice("Connected to live auction");
           if (response.room?.state) setAuction(response.room.state);
           if (response.room?.config) setRoom(old => ({ ...(old || {}), config: response.room.config }));
           // After a reconnect the server forgets who was in voice: rejoin with fresh peer links.
@@ -431,6 +460,7 @@ export default function App() {
         amountPaise: event?.amountPaise || 0
       });
       playTone(isUnsold ? 420 : 880);
+      if (!isUnsold) setTimeout(() => playTone(1175), 140);
     });
 
     socket.on("sale:skipped", event => {
@@ -503,12 +533,6 @@ export default function App() {
     }
     return () => cancelAnimationFrame(raf);
   }, [page, auction.status, auction.deadline, auction.auctionVersion, auction.pausedRemainingMs, duration]);
-
-  useEffect(() => {
-    if (!salePop) return undefined;
-    const timer = setTimeout(() => setSalePop(null), 3600);
-    return () => clearTimeout(timer);
-  }, [salePop]);
 
   // When the host ends the auction, everyone lands on the full squads view.
   useEffect(() => {
@@ -610,7 +634,7 @@ export default function App() {
     const sendAction = (nextAction, nextPayload = {}, onSuccess) => {
       socket.emit("auction:host-action", { action: nextAction, payload: nextPayload }, response => {
         if (!response?.ok) {
-          setNotice(response?.error || `Host action '${nextAction}' failed`);
+          setNotice(friendly(response?.error) || `Host action '${nextAction}' failed`);
           return;
         }
         if (response.state) setAuction(response.state);
@@ -619,23 +643,7 @@ export default function App() {
       });
     };
 
-    // The backend requires a current player before it can start the timer.
-    // If none is selected, select the first imported player, then start.
-    if (action === "start" && !auction.currentPlayerId) {
-      if (!players.length) {
-        setNotice("No players are loaded. Check the players API first.");
-        return;
-      }
-      const randomized = [...players].sort(() => Math.random() - 0.5);
-      sendAction("set-player", { playerId: randomized[0].id }, () => {
-        sendAction("start", {}, () => {
-          setPage("auction");
-          setNotice("Auction started");
-        });
-      });
-      return;
-    }
-
+    // The server owns the (de-duplicated, randomized) player order, so starting is a single action.
     sendAction(action, payload, () => {
       if (action === "start" || action === "resume") setPage("auction");
       if (!["sell", "unsold", "next-player", "pause", "resume"].includes(action)) setNotice(action === "start" ? "Auction started" : "Auction updated");
@@ -644,14 +652,16 @@ export default function App() {
 
   const placeBid = () => {
     if (!socketRef.current) return setNotice("Connect to a room before bidding.");
+    if (bidBlock) return setNotice(bidBlock.message);
     socketRef.current.emit("bid:place", {
       code: roomCode,
       participantId,
-      requestId: crypto.randomUUID()
+      requestId: crypto.randomUUID(),
+      expectedBidPaise: nextBid
     }, response => {
-      if (!response?.ok) return setNotice(response?.error || "Bid rejected");
-      setAuction(response.state);
-      setNotice(`Bid accepted: ${money(response.bid.amount_paise)}`);
+      if (response?.state) setAuction(response.state);
+      if (!response?.ok) return setNotice(friendly(response?.error));
+      setNotice(`Bid placed: ${money(response.bid.amount_paise)}`);
     });
   };
 
@@ -771,16 +781,19 @@ export default function App() {
       });
     });
 
-    return [...groups.values()].map(group => {
-      const completed = group.players.length > 0 && group.players.every(p => doneIds.has(Number(p.id)));
-      const upcoming = group.players.every(p => !doneIds.has(Number(p.id))) &&
-        String(group.number) !== String(state.currentSetNumber ?? "");
+    const cur = String(state.currentSetNumber ?? "");
+    const order = (state.setOrder || []).map(String);
+    const rank = g => { const k = order.indexOf(String(g.number)); return k >= 0 ? k : 1000 + (Number(g.number) || 0); };
+    return [...groups.values()].sort((a, b) => rank(a) - rank(b)).map(group => {
+      const finished = group.players.filter(p => doneIds.has(Number(p.id))).length;
+      const completed = group.players.length > 0 && finished === group.players.length;
+      const live = !completed && (String(group.number) === cur || finished > 0);
       return {
         ...group,
-        status: completed ? "completed" : upcoming ? "upcoming" : "current",
+        status: completed ? "completed" : live ? "current" : "upcoming",
         soldCount: group.players.filter(p => p.sold && !p.unsold).length,
         unsoldCount: group.players.filter(p => p.unsold).length,
-        remainingCount: group.players.filter(p => !doneIds.has(Number(p.id))).length
+        remainingCount: group.players.length - finished
       };
     }).filter(group => setsFilter === "all" || group.status === setsFilter);
   }, [players, auction, setsFilter]);
@@ -817,7 +830,7 @@ export default function App() {
             </div>
           </div>
         </section>
-        {notice && <Notice message={notice} onClose={() => setNotice("")} />}
+        {notice && <Notice message={notice} onClose={clearNotice} />}
       </main>
     );
   }
@@ -871,7 +884,7 @@ export default function App() {
           )}
         </footer>
 
-        {notice && <Notice message={notice} onClose={() => setNotice("")} />}
+        {notice && <Notice message={notice} onClose={clearNotice} />}
       </main>
     );
   }
@@ -887,9 +900,20 @@ export default function App() {
   const visibleFeed = feed.slice(0, 30);
   const myName = participant?.displayName || participant?.display_name || displayName || "Participant";
   const stats = playerStats(currentPlayer);
+  const completedCount = (auction.completedPlayerIds || []).length;
+  const settledNow = ["sold", "unsold"].includes(auction.status);
+  const lotNo = settledNow ? completedCount : completedCount + 1;
+  const setInfo = auction.setProgress || null;
   const iLead = Boolean(myTeam) && myTeam === auction.highestBidder?.teamKey;
-  const bidDisabled = auction.status !== "active" || !currentPlayer || !myTeam || remaining <= 0 || iLead;
-  const pursePaise = myPurse?.remainingPursePaise ?? 120000000000;
+  const pursePaise = myPurse?.remainingPursePaise ?? PURSE_PAISE;
+  const squadCount = Math.max(mySquad.length, Number(myPurse?.players_bought || 0));
+  // Why the BID button is locked for this franchise (the server enforces the same rules).
+  const bidBlock = !myTeam ? { key: "spectator", label: "Spectating", message: "Pick a franchise in the lobby to bid." }
+    : squadCount >= MAX_SQUAD ? { key: "full", label: "Squad full · 25/25", message: ERRORS.squad_full }
+    : pursePaise < nextBid ? { key: "purse", label: "Insufficient purse", message: ERRORS.insufficient_purse }
+    : null;
+  const bidDisabled = auction.status !== "active" || !currentPlayer || remaining <= 0 || iLead || Boolean(bidBlock);
+  const bidLabel = bidBlock ? bidBlock.label : iLead ? `You lead · ${money(auction.currentBidPaise)}` : `BID • ${money(nextBid)}`;
   const goLower = id => setTab(id);
   const ended = auction.status === "ended";
   const TABS = ended
@@ -940,7 +964,7 @@ export default function App() {
           </button>
         )}
         <button className={`ar-btn square ${settingsOpen ? "open" : ""}`} onClick={() => setSettingsOpen(v => !v)} aria-label="Settings" aria-expanded={settingsOpen}><Settings size={20} /></button>
-        <button className="ar-btn code" onClick={() => { navigator.clipboard?.writeText(roomCode); setNotice("Room code copied"); }} title="Copy room code">{roomCode}</button>
+        <button className="ar-btn code" onClick={() => { navigator.clipboard?.writeText(roomCode)?.catch(() => {}); setNotice("Room code copied"); }} title="Copy room code">{roomCode}</button>
         <button className="ar-btn square danger" onClick={leaveRoom} aria-label="Exit room"><X size={22} /></button>
       </header>
 
@@ -986,13 +1010,14 @@ export default function App() {
       <section className="ar-card ar-lot">
         <div className="ar-lot-head">
           <div className="ar-lot-title">
-            <span>LOT {auction.currentPlayerId || "—"}<em className="ar-lot-sub"> • IPL PLAYER AUCTION</em></span>
+            <span>LOT {currentPlayer ? lotNo : "—"}<em className="ar-lot-sub"> • IPL PLAYER AUCTION</em></span>
             <span className="ar-live"><Play size={10} fill="currentColor" /> LIVE</span>
+            {setInfo && <span className="ar-setchip" title={setInfo.name}>SET {setInfo.position}/{setInfo.totalSets}<em> · {setInfo.remaining} left</em></span>}
           </div>
           <div className="ar-counts">
             <span><b className="sold">{auction.soldCount || 0}</b><small>SOLD</small></span>
             <span><b className="unsold">{auction.unsoldCount || 0}</b><small>UNSOLD</small></span>
-            <span><b>{players.length}</b><small>PLAYERS</small></span>
+            <span><b>{Math.max(0, players.length - (auction.completedPlayerIds || []).length)}</b><small>LEFT</small></span>
           </div>
         </div>
 
@@ -1022,8 +1047,9 @@ export default function App() {
             </div>
           </div>
           <div className="ar-next"><span>Next valid bid</span><b>{money(nextBid)}</b></div>
-          <button className="ar-bid" disabled={bidDisabled} onClick={placeBid}>
-            <Gavel size={24} />{iLead ? `You lead · ${money(auction.currentBidPaise)}` : `BID • ${money(nextBid)}`}
+          {bidBlock && bidBlock.key !== "spectator" && <p className="ar-bid-note" role="alert">{bidBlock.message}</p>}
+          <button className={`ar-bid ${bidBlock ? "blocked" : ""}`} disabled={bidDisabled} onClick={placeBid}>
+            {bidBlock ? <Ban size={22} /> : <Gavel size={24} />}{bidLabel}
           </button>
         </div>
 
@@ -1037,8 +1063,8 @@ export default function App() {
         )}
 
         <div className="ar-links">
-          <button onClick={() => goLower("squads")}><Wallet size={22} /><span>Purse: <b>{money(pursePaise)}</b></span><ChevronRight size={18} /></button>
-          <button onClick={() => goLower("squads")}><Users size={22} /><span>Squad: <b>{mySquad.length}/25</b> · {Math.max(0, 25 - mySquad.length)} slots</span><ChevronRight size={18} /></button>
+          <button onClick={() => goLower("squads")}><Wallet size={22} /><span>Purse: <b className={bidBlock?.key === "purse" ? "warn" : ""}>{money(pursePaise)}</b></span><ChevronRight size={18} /></button>
+          <button onClick={() => goLower("squads")}><Users size={22} /><span>Squad: <b className={squadCount >= MAX_SQUAD ? "warn" : ""}>{squadCount}/{MAX_SQUAD}</b> · {Math.max(0, MAX_SQUAD - squadCount)} slots</span><ChevronRight size={18} /></button>
         </div>
       </section>
 
@@ -1077,7 +1103,7 @@ export default function App() {
             <span className="ar-strip-name">{currentPlayer?.name || "Waiting…"}</span>
             <b className="ar-strip-bid-amt">{money(auction.currentBidPaise)}</b>
             <b data-tp className="ar-strip-time">{String(Math.floor(remaining / 60)).padStart(2, "0")}:{String(remaining % 60).padStart(2, "0")}</b>
-            <button className="ar-strip-bid" disabled={bidDisabled} onClick={placeBid}>BID {money(nextBid)}</button>
+            <button className="ar-strip-bid" disabled={bidDisabled} onClick={placeBid}>{bidBlock ? bidBlock.label : `BID ${money(nextBid)}`}</button>
           </div>
         )}
         {ended && (
@@ -1149,8 +1175,8 @@ export default function App() {
         {tab === "sets" && (
           <div className="ar-panel">
             <div className="ar-setnow">
-              <div><small>NOW AUCTIONING</small><strong>{currentPlayer?.source_data?.set_name || currentPlayer?.source_data?.setName || (auction.currentSetNumber ? `Set ${auction.currentSetNumber}` : "Waiting for first set")}</strong></div>
-              <span>{auction.status === "ended" ? "Auction complete" : `${auction.soldCount || 0} sold · ${auction.unsoldCount || 0} unsold`}</span>
+              <div><small>NOW AUCTIONING</small><strong>{setInfo?.name || auction.currentSetName || currentPlayer?.source_data?.set_name || (auction.currentSetNumber ? `Set ${auction.currentSetNumber}` : "Waiting for first set")}</strong></div>
+              <span>{auction.status === "ended" ? "Auction complete" : setInfo ? `Set ${setInfo.position} of ${setInfo.totalSets} · ${setInfo.remaining} of ${setInfo.total} left` : `${auction.soldCount || 0} sold · ${auction.unsoldCount || 0} unsold`}</span>
             </div>
             <div className="ar-filters">
               {[["all", "All"], ["current", "Current"], ["upcoming", "Upcoming"], ["completed", "Completed"]].map(([key, label]) => (
@@ -1173,31 +1199,78 @@ export default function App() {
         )}
       </section>
 
-      {salePop && (
-        <div key={salePop.id} className={`ar-salepop ${salePop.kind}`} style={{ "--team-color": teamInfo(salePop.teamKey)?.color || "#6b7a99" }} role="status">
-          {salePop.kind === "sold" ? <TeamChip teamKey={salePop.teamKey} /> : <span className="ar-chip plain">—</span>}
-          <div>
-            <b>{salePop.kind === "sold" ? "SOLD" : "UNSOLD"}</b>
-            <span>{salePop.player}{salePop.kind === "sold" && salePop.teamName ? ` · ${salePop.teamName}` : ""}</span>
-          </div>
-          {salePop.kind === "sold" && <strong>{money(salePop.amountPaise)}</strong>}
-        </div>
-      )}
+      {salePop && <SaleCelebration key={salePop.id} pop={salePop} onDone={clearSale} />}
 
-      {notice && <Notice message={notice} onClose={() => setNotice("")} />}
+      {notice && <Notice message={notice} onClose={clearNotice} />}
     </main>
   );
 }
 
 function Notice({ message, onClose }) {
+  // Keep the latest onClose in a ref: an inline arrow from the parent changes every render
+  // (the bid timer re-renders 4x a second), which used to restart this timer forever.
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
   useEffect(() => {
-    const timer = setTimeout(onClose, 3500);
+    const timer = setTimeout(() => closeRef.current(), 2600);
     return () => clearTimeout(timer);
-  }, [message, onClose]);
+  }, [message]);
+  const kind = /fail|reject|cannot|can't|not enough|insufficient|full|expired|already|only the host|not part|unavailable|issue|could not|taken|no bid|wrong/i.test(message) ? "bad"
+    : /accepted|placed|selected|copied|started|saved|connected|set to|complete/i.test(message) ? "good" : "info";
   return (
-    <div className="toast" role="status">
+    <div className={`toast ${kind}`} role="status" aria-live="polite">
+      <i className="toast-dot" />
       <span>{message}</span>
-      <button onClick={onClose} aria-label="Dismiss"><X size={15} /></button>
+      <button onClick={onClose} aria-label="Dismiss"><X size={14} /></button>
+    </div>
+  );
+}
+
+// ---------- SOLD / UNSOLD celebration: team colours, confetti and party poppers, ~2 seconds ----------
+const CONFETTI = Array.from({ length: 44 }, (_, i) => ({
+  left: (i * 37 + 11) % 100, delay: (i % 9) * 0.045, dur: 1.15 + (i % 5) * 0.12,
+  w: 6 + (i % 4) * 2, h: 9 + (i % 3) * 4, rot: (i * 67) % 360, drift: ((i % 7) - 3) * 26, c: i % 3
+}));
+const POPPER = Array.from({ length: 16 }, (_, i) => {
+  const a = (-18 - (i / 15) * 54) * (Math.PI / 180);        // fan from the bottom corner up and inward
+  const d = 120 + (i % 4) * 38;
+  return { dx: Math.cos(a) * d, dy: Math.sin(a) * d, delay: (i % 4) * 0.03, c: i % 3, s: 6 + (i % 3) * 2 };
+});
+
+function SaleCelebration({ pop, onDone }) {
+  const sold = pop.kind === "sold";
+  const team = teamInfo(pop.teamKey);
+  const primary = sold ? (team?.color || "#4bb38c") : "#8793ad";
+  const accent = sold ? (TEAM_ACCENT[pop.teamKey] || "#f2c94c") : "#5b6579";
+  const life = sold ? 2100 : 1500;
+  useEffect(() => {
+    const timer = setTimeout(onDone, life);
+    return () => clearTimeout(timer);
+  }, [pop.id, life, onDone]);
+  const colors = [primary, accent, "#ffffff"];
+  return (
+    <div className={`ar-cele ${sold ? "sold" : "unsold"}`} style={{ "--tc": primary, "--ta": accent, "--life": `${life}ms` }} role="status" aria-live="polite">
+      <div className="ar-cele-glow" />
+      {sold && (
+        <div className="ar-cele-fx" aria-hidden="true">
+          {CONFETTI.map((p, i) => (
+            <i key={i} className="ar-confetti" style={{ left: `${p.left}%`, width: p.w, height: p.h, background: colors[p.c], animationDelay: `${p.delay}s`, animationDuration: `${p.dur}s`, "--r": `${p.rot}deg`, "--x": `${p.drift}px` }} />
+          ))}
+          {[0, 1].map(side => POPPER.map((p, i) => (
+            <i key={`${side}-${i}`} className={`ar-popper ${side ? "right" : "left"}`} style={{ width: p.s, height: p.s, background: colors[p.c], animationDelay: `${p.delay}s`, "--dx": `${side ? -p.dx : p.dx}px`, "--dy": `${p.dy}px` }} />
+          )))}
+        </div>
+      )}
+      <div className="ar-cele-card">
+        {sold && <TeamChip teamKey={pop.teamKey} />}
+        <b className="ar-cele-word">{sold ? "SOLD!" : "UNSOLD"}</b>
+        <span className="ar-cele-player">{pop.player}</span>
+        {sold ? (
+          <span className="ar-cele-detail"><em>{pop.teamName || "Winning franchise"}</em><strong>{money(pop.amountPaise)}</strong></span>
+        ) : (
+          <span className="ar-cele-detail"><em>No bids. Moving on…</em></span>
+        )}
+      </div>
     </div>
   );
 }   

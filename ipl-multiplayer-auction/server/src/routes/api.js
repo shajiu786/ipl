@@ -1,19 +1,21 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { TEAM_LIST, TEAM_NAMES, makeCode, emptyState } from '../services/auction.js';
+import { PURSE_PAISE, TEAM_LIST, TEAM_NAMES, makeCode, emptyState, dedupePlayers, publicState } from '../services/auction.js';
 
 export function createApiRouter(pool) {
   const router = Router();
   const createSchema = z.object({ name: z.string().trim().min(2).max(60), displayName: z.string().trim().min(1).max(40), participantId: z.string().min(8).max(100), config: z.object({ openingBidPaise: z.number().int().positive().optional(), incrementPaise: z.number().int().positive().optional(), durationSeconds: z.number().int().min(5).max(120).optional() }).optional() });
   router.get('/players', async (req, res) => {
     try {
-      const page = Math.max(1, Number(req.query.page) || 1), limit = Math.min(100, Math.max(1, Number(req.query.limit) || 30));
+      const page = Math.max(1, Number(req.query.page) || 1), limit = Math.min(500, Math.max(1, Number(req.query.limit) || 30));
       const q = String(req.query.q || '').trim(), role = String(req.query.role || '').trim();
       const result = await pool.query(
-        `SELECT id, name, role, nationality, batting_style, bowling_style, photo_url, base_price_paise, source_attribution, data_cutoff, source_data
+        `SELECT id, name, role, nationality, batting_style, bowling_style, photo_url, base_price_paise, source_attribution, data_cutoff, source_data, stats
          FROM players WHERE ($1 = '' OR name ILIKE '%' || $1 || '%') AND ($2 = '' OR role ILIKE '%' || $2 || '%')
-         ORDER BY name LIMIT $3 OFFSET $4`, [q, role, limit, (page - 1) * limit]);
-      res.json({ data: result.rows, page, limit });
+         ORDER BY id`, [q, role]);
+      // one entry per person, even if the table holds repeated rows
+      const unique = dedupePlayers(result.rows).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+      res.json({ data: unique.slice((page - 1) * limit, page * limit), page, limit, total: unique.length });
     } catch { res.status(500).json({ error: 'players_query_failed' }); }
   });
   router.get('/players/:id', async (req, res) => {
@@ -86,16 +88,20 @@ export function createApiRouter(pool) {
       const r = await pool.query('SELECT id,code,name,status,config,state,created_at FROM auction_rooms WHERE code=$1',[req.params.code.toUpperCase()]);
       if (!r.rowCount) return res.status(404).json({error:'room_not_found'});
       const participants = await pool.query('SELECT participant_id,display_name,team_key,is_host,connected FROM room_participants WHERE room_id=$1 ORDER BY joined_at',[r.rows[0].id]);
-      res.json({room:r.rows[0],participants:participants.rows,teams:TEAM_LIST});
+      res.json({room:{...r.rows[0],state:publicState(r.rows[0],r.rows[0].state)},participants:participants.rows,teams:TEAM_LIST});
     } catch { res.status(500).json({error:'room_query_failed'}); }
   });
   router.get('/rooms/:code/auction', async (req,res) => {
-    try { const r=await pool.query('SELECT id,code,status,config,state FROM auction_rooms WHERE code=$1',[req.params.code.toUpperCase()]); if(!r.rowCount)return res.status(404).json({error:'room_not_found'}); res.json(r.rows[0]); }
+    try { const r=await pool.query('SELECT id,code,status,config,state FROM auction_rooms WHERE code=$1',[req.params.code.toUpperCase()]); if(!r.rowCount)return res.status(404).json({error:'room_not_found'}); res.json({...r.rows[0],state:publicState(r.rows[0],r.rows[0].state)}); }
     catch { res.status(500).json({error:'auction_query_failed'}); }
   });
   router.get('/rooms/:code/bids', async (req,res) => {
     try { const r=await pool.query(`SELECT b.*,p.name AS player_name, rp.display_name FROM auction_bids b LEFT JOIN players p ON p.id=b.player_id LEFT JOIN room_participants rp ON rp.participant_id=b.participant_id AND rp.room_id=b.room_id JOIN auction_rooms ar ON ar.id=b.room_id WHERE ar.code=$1 ORDER BY b.created_at DESC LIMIT 100`,[req.params.code.toUpperCase()]); res.json({data:r.rows}); }
     catch { res.status(500).json({error:'bids_query_failed'}); }
+  });
+  router.get('/rooms/:code/chat', async (req,res) => {
+    try { const r=await pool.query(`SELECT c.id,c.display_name,c.team_key,c.message,c.created_at FROM room_chat c JOIN auction_rooms a ON a.id=c.room_id WHERE a.code=$1 ORDER BY c.created_at DESC LIMIT 100`,[req.params.code.toUpperCase()]); res.json({data:r.rows.reverse()}); }
+    catch { res.status(500).json({error:'chat_query_failed'}); }
   });
   router.get('/rooms/:code/squads', async (req,res) => {
     try { const r=await pool.query(`SELECT s.team_key,p.*,s.purchase_price_paise FROM room_squad_players s JOIN players p ON p.id=s.player_id JOIN auction_rooms r ON r.id=s.room_id WHERE r.code=$1 ORDER BY s.team_key,p.name`,[req.params.code.toUpperCase()]); res.json({data:r.rows}); }
@@ -106,7 +112,7 @@ export function createApiRouter(pool) {
       const room=await pool.query('SELECT id FROM auction_rooms WHERE code=$1',[req.params.code.toUpperCase()]);
       if(!room.rowCount)return res.status(404).json({error:'room_not_found'});
       const r=await pool.query(`SELECT t.team_key,COALESCE(SUM(s.purchase_price_paise),0)::bigint AS spent_paise,COUNT(s.id)::int AS players_bought FROM (SELECT unnest($2::text[]) AS team_key) t LEFT JOIN room_squad_players s ON s.room_id=$1 AND s.team_key=t.team_key GROUP BY t.team_key ORDER BY t.team_key`,[room.rows[0].id,TEAM_LIST.map(t=>t[0])]);
-      res.json({initialPursePaise:120000000000, data:r.rows.map(x=>({...x,remainingPursePaise:120000000000-Number(x.spent_paise)}))});
+      res.json({initialPursePaise:PURSE_PAISE, data:r.rows.map(x=>({...x,remainingPursePaise:PURSE_PAISE-Number(x.spent_paise)}))});
     } catch { res.status(500).json({error:'purses_query_failed'}); }
   });
   router.get('/rooms/:code/playing-xi', async (req,res) => {

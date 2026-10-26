@@ -12,6 +12,12 @@ CREATE TABLE IF NOT EXISTS players (
   data_cutoff DATE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+-- columns added for photo/stat enrichment and de-duplicated imports (safe to re-run on an existing database)
+ALTER TABLE players ADD COLUMN IF NOT EXISTS external_id TEXT;
+ALTER TABLE players ADD COLUMN IF NOT EXISTS stats JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE players ADD COLUMN IF NOT EXISTS stats_updated_at TIMESTAMPTZ;
+ALTER TABLE players ADD COLUMN IF NOT EXISTS photo_source TEXT;
+CREATE INDEX IF NOT EXISTS players_external_id_idx ON players (external_id);
 CREATE INDEX IF NOT EXISTS players_name_idx ON players USING GIN (to_tsvector('simple', name));
 
 CREATE TABLE IF NOT EXISTS auction_rooms (

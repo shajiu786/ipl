@@ -52,7 +52,40 @@ cd server
 npm install
 npm run import:csv -- ../data/ipl_auction_players_24_sets.csv
 ```
-The importer preserves original CSV columns in `source_data` JSONB and maps common name/role/base-price columns when detected, including `base_price_lakh` from the supplied CSV. Unknown statistics remain NULL; this does not certify the data as verified. Review source attribution and cutoff before public redistribution.
+The importer preserves original CSV columns in `source_data` JSONB and maps common name/role/base-price columns when detected, including `base_price_lakh` from the supplied CSV. Statistics and photos are filled by `npm run enrich:players` (see below); this does not certify the data as verified. Review source attribution and cutoff before public redistribution.
+
+## Player photos and stats (fetch + update)
+Photos come from each player's Wikipedia page; career IPL stats (matches, runs, average, strike rate, wickets, economy) are computed from the free Cricsheet ball-by-ball archive. Neither is in the CSV, so fetch them once after importing:
+```bash
+cd server
+npm run enrich:players              # only players missing a photo or stats
+npm run enrich:players -- --force   # refresh everything (e.g. at the start of a new season)
+```
+- The script prints players it could not match. Add them to `data/player_aliases.json` as `{ "Auction name": "Cricsheet name" }` and run it again with `-- --stats`.
+- No shell on your host? Set `AUTO_ENRICH=1` on the server and it fetches missing photos/stats in the background on boot.
+- A missing photo is also fetched live when that player comes up in an auction.
+- Wikimedia images keep their own licences (`players.photo_source` records the page). Cricsheet data is ODC-BY: credit https://cricsheet.org. Set `WIKI_USER_AGENT` to a string with your contact details.
+
+## Repeated players
+The supplied CSV lists 45 players a second time in later sets (`duplicate_in_pool=True`), so sets 23 and 24 are entirely repeats and the real pool is 243 players in 22 sets. The importer now keeps one row per person and can be re-run safely. If your database was already imported (possibly twice):
+```bash
+cd server
+npm run db:schema                    # adds the new columns
+npm run dedupe:players               # preview
+npm run dedupe:players -- --apply    # clean up
+```
+The auction also skips any player whose name was already auctioned, so a room can never repeat someone even if the table still has duplicates.
+
+## Auction rules enforced by the server
+- A franchise cannot bid once it holds 25 players or when its remaining purse (120 Cr start) is below the next bid.
+- Bidding opens at the player's base price. A bid sent at an out-of-date price is refused instead of silently going higher.
+- Host Next starts the next player immediately; sets are auctioned one after another and the current set is shown live.
+
+## Tests
+```bash
+cd server && npm install && npm test
+```
+Includes a full simulated auction (243 lots) against an in-memory database stand-in.
 
 ## Environment variables
 See `server/.env.example` and `client/.env.example`. Never commit `.env` files or production secrets.

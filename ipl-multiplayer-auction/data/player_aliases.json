@@ -1,0 +1,3 @@
+{
+  "_comment": "Optional. Map an auction name to the name Cricsheet uses, e.g. when stats are missing for a player. Run: npm run enrich:players -- --stats"
+}

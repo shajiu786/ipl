@@ -318,7 +318,6 @@ html:has(.ar-app) #root { height: 100%; overflow: hidden; }
 .ar-save { flex: none; height: 44px; cursor: pointer; border: 1px solid rgba(255, 255, 255, 0.4); border-radius: 12px; font-size: 15px; font-weight: 800; color: #fff; background: #3a68c2; }
 .ar-save:disabled { opacity: 0.4; cursor: not-allowed; }
 
-.ar-app .toast { position: fixed; left: 50%; top: calc(62px + env(safe-area-inset-top, 0px)); bottom: auto; transform: translateX(-50%); z-index: 80; width: max-content; max-width: min(520px, calc(100% - 24px)); }
 
 /* ---------- very small phones ---------- */
 @media (max-width: 440px) {
@@ -371,25 +370,19 @@ html:has(.ar-app) #root { height: 100%; overflow: hidden; }
 }
 
 /* =====================================================================
-   DESKTOP: a different layout, not a stretched phone.
-   Left  = the lot (player hero + live bidding). Right = bids feed + chat/squads/sets.
+   DESKTOP (900px+): a real two-column workspace, not a stretched phone.
+   Left  = the lot: player hero, stat tiles, live bidding, host controls.
+   Right = live bids on top, chat / squads / sets below. Nothing scrolls except inside panels.
    ===================================================================== */
 @media (min-width: 900px) {
   .ar-app {
-    max-width: 1760px;
-    padding: 20px 28px 22px;
-    gap: 16px 20px;
-    display: grid;
-    grid-template-columns: minmax(0, 1.5fr) minmax(380px, 0.9fr);
+    max-width: 1680px; padding: 18px clamp(20px, 2.4vw, 40px) 22px; gap: 16px 20px;
+    display: grid; overflow: hidden;
+    grid-template-columns: minmax(0, 1.6fr) minmax(380px, 0.9fr);
     grid-template-rows: auto auto minmax(0, 1fr);
     grid-template-areas: "bar bar" "lot feed" "lot lower";
-    overflow: hidden;
   }
   .ar-bar { grid-area: bar; flex-direction: row; align-items: center; gap: 16px; }
-  .ar-lot { grid-area: lot; min-height: 0; padding: 20px; gap: 14px; }
-  .ar-feed { grid-area: feed; padding: 14px 18px; }
-  .ar-lower { grid-area: lower; min-height: 0; }
-
   .ar-top { flex: 1; gap: 10px; min-height: 52px; }
   .ar-logo { display: grid; width: 48px; height: 48px; border-radius: 14px; }
   .ar-logo svg { width: 24px; height: 24px; }
@@ -398,90 +391,112 @@ html:has(.ar-app) #root { height: 100%; overflow: hidden; }
   .ar-btn { height: 46px; padding: 0 16px; font-size: 14.5px; border-radius: 14px; }
   .ar-btn.square { width: 46px; padding: 0; }
   .ar-btn > span { display: inline; }
-  .ar-settings { top: 78px; right: 28px; }
+  .ar-settings { top: 78px; right: clamp(20px, 2.4vw, 40px); }
+  .ar-identity { flex: none; padding: 6px 8px 6px 12px; border-radius: 18px; gap: 12px; min-width: 330px; }
+  .ar-avatar { width: 40px; height: 40px; font-size: 19px; }
+  .ar-identity-copy strong { font-size: 17px; }
+  .ar-teamtag { height: 42px; max-width: 260px; }
 
-  .ar-identity { flex: none; padding: 7px 8px 7px 12px; border-radius: 18px; gap: 12px; min-width: 330px; }
-  .ar-avatar { width: 42px; height: 42px; font-size: 20px; }
-  .ar-identity-copy strong { font-size: 18px; }
-  .ar-select { width: 200px; }
-  .ar-select select { height: 42px; font-size: 14.5px; }
-  .ar-select svg { top: 12px; }
-
+  /* ---- lot card ---- */
+  .ar-lot { grid-area: lot; min-height: 0; padding: clamp(16px, 1.6vw, 24px); gap: clamp(12px, 1.6vh, 18px); overflow: hidden auto; scrollbar-width: none; }
+  .ar-lot::-webkit-scrollbar { display: none; }
+  .ar-lot-head { align-items: center; flex-wrap: wrap; gap: 10px 16px; }
+  .ar-lot-title { gap: 12px; flex-wrap: wrap; }
   .ar-lot-title > span:first-child { font-size: 16px; }
   .ar-lot-sub { display: inline; }
-  .ar-live { font-size: 12.5px; padding: 5px 12px; }
-  .ar-counts span { padding: 0 18px; }
-  .ar-counts b { font-size: 30px; }
-  .ar-counts small { font-size: 11px; }
+  .ar-live { font-size: 12px; padding: 4px 11px; }
+  .ar-setchip { display: inline-flex; align-items: center; height: 28px; padding: 0 12px; font-size: 12.5px; }
+  .ar-counts { padding: 6px 4px; border: 1px solid var(--ar-line-soft); border-radius: 14px; background: var(--ar-tile); }
+  .ar-counts span { padding: 0 20px; gap: 3px; }
+  .ar-counts b { font-size: 24px; line-height: 1.05; }
+  .ar-counts small { font-size: 10.5px; }
 
-  .ar-player { flex: 1; min-height: 0; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); gap: 26px; }
-  .ar-photo { width: auto; height: 100%; min-height: 0; aspect-ratio: 4 / 5; max-width: 340px; border-radius: 22px; }
-  .ar-photo-fallback { font-size: 72px; }
-  .ar-photo figcaption { font-size: 12px; padding: 22px 8px 10px; }
-  .ar-player-info { gap: 8px; justify-content: center; min-height: 0; }
-  .ar-role { font-size: 14px; padding: 5px 16px; }
-  .ar-player-info h2 { font-size: clamp(30px, 3.2vw, 48px); }
-  .ar-nation { font-size: 19px; gap: 10px; }
+  .ar-player { flex: 1 1 auto; min-height: clamp(210px, 30vh, 380px); grid-template-columns: auto minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); gap: clamp(18px, 2vw, 32px); align-items: stretch; }
+  .ar-photo { width: auto; height: 100%; min-height: 0; max-height: 400px; aspect-ratio: 4 / 5; border-radius: 22px; }
+  .ar-photo-fallback { font-size: clamp(44px, 5vw, 76px); }
+  .ar-photo figcaption { font-size: 11px; padding: 22px 8px 9px; background: linear-gradient(transparent, rgba(2, 6, 16, 0.85)); }
+  .ar-player-info { gap: clamp(6px, 1vh, 12px); justify-content: center; min-height: 0; }
+  .ar-role { font-size: 13px; padding: 4px 14px; }
+  .ar-player-info h2 { font-size: clamp(30px, 3.4vw, 54px); line-height: 1.04; }
+  .ar-nation { font-size: clamp(16px, 1.4vw, 20px); gap: 10px; }
   .ar-flag { font-size: 24px; }
-  .ar-statrow { margin-top: 6px; gap: 10px; flex-wrap: nowrap; }
+  .ar-statrow { margin-top: clamp(4px, 1vh, 12px); display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; align-items: stretch; }
   .ar-statrow > div, .ar-statrow > .ar-base {
-    padding: 9px 16px; gap: 5px; border: 1px solid var(--ar-line-soft); border-radius: 14px; background: var(--ar-tile); min-width: 0; flex: 0 1 auto;
+    padding: 10px 8px; gap: 6px; justify-items: center; text-align: center; border: 1px solid var(--ar-line-soft); border-radius: 14px; background: var(--ar-tile); min-width: 0;
   }
-  .ar-statrow small { font-size: 11.5px; }
-  .ar-statrow b { font-size: 24px; }
-  .ar-base b { font-size: 28px; }
+  .ar-statrow > .ar-base { border-color: rgba(126, 166, 230, 0.4); background: rgba(63, 111, 196, 0.12); }
+  .ar-statrow small { font-size: 10.5px; }
+  .ar-statrow b { font-size: clamp(18px, 1.7vw, 24px); }
+  .ar-base b { font-size: clamp(18px, 1.7vw, 24px); }
 
+  /* ---- bidding ---- */
   .ar-bidbox { flex: none; border-radius: 20px; }
-  .ar-now { padding: 14px 10px 14px 24px; }
-  .ar-now small { font-size: 11.5px; }
-  .ar-now b { font-size: clamp(26px, 2.4vw, 38px); white-space: normal; overflow-wrap: anywhere; }
-  .ar-now b.dim { font-size: 22px; }
+  .ar-now { grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr) auto; padding: 14px 14px 14px 24px; gap: 0; }
+  .ar-now small { font-size: 11px; }
+  .ar-now b { font-size: clamp(28px, 2.6vw, 40px); white-space: normal; overflow-wrap: anywhere; line-height: 1.05; }
+  .ar-now b.dim { font-size: 20px; }
   .ar-now > div + div { padding-left: 24px; }
-  .ar-timer { padding: 10px 18px !important; border-radius: 16px; }
-  .ar-timer b { font-size: clamp(32px, 3vw, 46px); gap: 10px; }
-  .ar-timer b svg { width: 34px; height: 34px; }
-  .ar-next { padding: 8px 24px; font-size: 17px; }
-  .ar-next b { font-size: 24px; }
-  .ar-bid { height: clamp(56px, 8vh, 80px); margin: 0 10px 10px; font-size: clamp(24px, 2.4vw, 34px); border-radius: 16px; }
-  .ar-bid svg { width: 30px; height: 30px; }
-  .ar-bid:disabled { font-size: 22px; }
+  .ar-timer { min-width: 190px; padding: 10px 20px !important; border-radius: 16px; margin-left: 8px; }
+  .ar-timer b { font-size: clamp(34px, 3vw, 46px); gap: 10px; }
+  .ar-timer b svg { width: 30px; height: 30px; }
+  .ar-next { padding: 8px 24px; font-size: 16px; }
+  .ar-next b { font-size: 22px; }
+  .ar-bid { height: clamp(56px, 8vh, 74px); margin: 0 12px 12px; font-size: clamp(22px, 2.2vw, 32px); border-radius: 16px; }
+  .ar-bid svg { width: 28px; height: 28px; }
+  .ar-bid:disabled { font-size: clamp(18px, 1.8vw, 24px); }
+  .ar-bid-note { margin: 0 12px 12px; padding: 8px 14px; font-size: 14px; }
 
   .ar-host { gap: 10px; }
-  .ar-host button { height: 42px; font-size: 15px; border-radius: 13px; }
+  .ar-host button { height: 44px; font-size: 15px; border-radius: 13px; }
   .ar-links { gap: 12px; }
-  .ar-links button { height: 52px; font-size: 16px; padding: 0 18px; gap: 12px; border-radius: 16px; }
-  .ar-links button svg { width: 24px; height: 24px; }
-  .ar-links button svg:last-child { width: 20px; height: 20px; }
+  .ar-links button { height: 52px; font-size: 15.5px; padding: 0 18px; gap: 12px; border-radius: 16px; }
+  .ar-links button svg { width: 22px; height: 22px; }
+  .ar-links button svg:last-child { width: 18px; height: 18px; }
 
-  .ar-feed-title { font-size: 15px; }
-  .ar-feed ul { max-height: 172px; }
-  .ar-feed li { font-size: 15px; min-height: 40px; gap: 12px; }
-  .ar-feed time, .ar-chat time { font-size: 13.5px; }
+  /* ---- right column ---- */
+  .ar-feed { grid-area: feed; padding: 14px 18px; }
+  .ar-feed-title { font-size: 14px; }
+  .ar-feed ul { max-height: clamp(110px, 17vh, 176px); }
+  .ar-feed li { font-size: 14.5px; min-height: 38px; gap: 12px; }
+  .ar-feed time, .ar-chat time { font-size: 13px; }
   .ar-chip { min-width: 32px; height: 32px; font-size: 11.5px; }
-
-  .ar-tabs button { height: 54px; font-size: 14.5px; }
+  .ar-lower { grid-area: lower; min-height: 0; }
+  .ar-tabs button { height: 52px; font-size: 14.5px; }
   .ar-tabs button svg { width: 19px; height: 19px; }
   .ar-panel { padding: 12px; gap: 12px; }
-  .ar-chat li { min-height: 46px; font-size: 15px; }
-  .ar-chat li > b { font-size: 15px; }
-  .ar-compose input { height: 48px; font-size: 15.5px; }
-  .ar-voice { width: 48px; height: 48px; }
-  .ar-send { width: 58px; height: 48px; }
+  .ar-chat li { min-height: 44px; font-size: 14.5px; }
+  .ar-chat li > b { font-size: 14.5px; }
+  .ar-compose input { height: 46px; font-size: 15px; }
+  .ar-voice { width: 46px; height: 46px; }
+  .ar-send { width: 56px; height: 46px; }
 }
 
-/* shorter laptop screens */
+/* laptops: 13" screens are ~700px tall, so tighten vertical rhythm instead of clipping */
 @media (min-width: 900px) and (max-height: 820px) {
-  .ar-app { padding: 14px 22px 16px; gap: 12px 16px; }
-  .ar-lot { padding: 16px; gap: 12px; }
-  .ar-now { padding: 12px 8px 12px 20px; }
-  .ar-next { padding: 8px 20px; }
-  .ar-bid { height: 58px; font-size: 24px; }
-  .ar-links button { height: 48px; }
-  .ar-statrow > div, .ar-statrow > .ar-base { padding: 8px 14px; }
-  .ar-statrow b { font-size: 22px; }
-  .ar-feed ul { max-height: 124px; }
-  .ar-tabs button { height: 46px; }
+  .ar-app { padding: 12px clamp(16px, 2vw, 28px) 14px; gap: 12px 16px; }
+  .ar-lot { padding: 14px 16px; gap: 10px; }
+  .ar-player { min-height: 170px; }
+  .ar-photo { max-height: 260px; }
+  .ar-statrow > div, .ar-statrow > .ar-base { padding: 7px 6px; gap: 4px; }
+  .ar-now { padding: 10px 10px 10px 20px; }
+  .ar-next { padding: 5px 20px; }
+  .ar-bid { height: 52px; font-size: 22px; margin-bottom: 10px; }
+  .ar-host button { height: 38px; }
+  .ar-links button { height: 44px; }
+  .ar-feed ul { max-height: 92px; }
+  .ar-tabs button { height: 44px; }
 }
+@media (min-width: 900px) and (max-height: 700px) {
+  .ar-player-info h2 { font-size: 28px; }
+  .ar-links { display: none; }
+}
+
+/* very wide monitors: more room for the right column and bigger type */
+@media (min-width: 1600px) {
+  .ar-app { grid-template-columns: minmax(0, 1.5fr) minmax(480px, 1fr); }
+  .ar-player-info h2 { font-size: clamp(44px, 3vw, 60px); }
+}
+
 
 @media (prefers-reduced-motion: reduce) { .ar-bid { transition: none; } }
 
@@ -539,23 +554,74 @@ html:has(.ar-app) #root { height: 100%; overflow: hidden; }
 .ar-voice-debug em { font-style: normal; color: var(--ar-amber); }
 
 
-/* ---------- sold / unsold pop (small, in the winning team's colours) ---------- */
-.ar-salepop {
-  position: fixed; z-index: 90; left: 50%; top: calc(14px + env(safe-area-inset-top, 0px)); transform: translateX(-50%);
-  display: flex; align-items: center; gap: 10px; width: max-content; max-width: min(380px, calc(100% - 20px));
-  padding: 8px 14px 8px 8px; border-radius: 14px; border-left-width: 4px;
-  background: color-mix(in srgb, var(--team-color) 14%, #0b1018);
-  border: 1px solid color-mix(in srgb, var(--team-color) 45%, #0b1018);
-  border-left: 4px solid var(--team-color);
-  animation: ar-pop 0.25s ease-out;
+/* ---------- extras: set chip, blocked-bid notes ---------- */
+.ar-setchip {
+  display: inline-flex; align-items: center; height: 24px; padding: 0 10px; border-radius: 999px; white-space: nowrap;
+  font-size: 11px; font-weight: 800; letter-spacing: 0.04em; color: var(--ar-cyan);
+  border: 1px solid rgba(126, 166, 230, 0.4); background: rgba(63, 111, 196, 0.14);
 }
-.ar-salepop > div { display: grid; min-width: 0; }
-.ar-salepop b { font-size: 11px; letter-spacing: 0.12em; color: var(--team-color); }
-.ar-salepop.unsold b { color: #9aa6bf; }
-.ar-salepop span:not(.ar-chip) { font-size: 13px; color: #e4e9f2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ar-salepop strong { margin-left: 4px; font-family: "Space Grotesk", sans-serif; font-size: 15px; white-space: nowrap; }
-@keyframes ar-pop { from { opacity: 0; transform: translate(-50%, -8px); } to { opacity: 1; transform: translate(-50%, 0); } }
-.ar-app .toast { top: calc(72px + env(safe-area-inset-top, 0px)); }
+.ar-setchip em { font-style: normal; color: var(--ar-muted); font-weight: 700; }
+@media (max-width: 440px) { .ar-setchip em { display: none; } }
+.ar-bid.blocked { color: #ffb4c0; background: rgba(217, 89, 110, 0.12); border-color: rgba(217, 89, 110, 0.45); }
+.ar-bid-note {
+  margin: 0 6px 6px; padding: 6px 10px; border-radius: 10px; font-size: 12.5px; font-weight: 600; line-height: 1.3;
+  color: #ffb4c0; background: rgba(217, 89, 110, 0.1); border: 1px solid rgba(217, 89, 110, 0.3);
+}
+.ar-links b.warn { color: #ff9aab; }
+.ar-statrow > .ar-stat:nth-child(5) { display: none; }
+@media (min-width: 560px) { .ar-statrow > .ar-stat:nth-child(5) { display: grid; } }
+
+/* ---------- SOLD / UNSOLD celebration (about 2 seconds, never blocks taps) ---------- */
+.ar-cele {
+  position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; pointer-events: none;
+  animation: ar-cele-life var(--life, 2s) ease both;
+}
+@keyframes ar-cele-life { 0% { opacity: 0; } 9% { opacity: 1; } 82% { opacity: 1; } 100% { opacity: 0; } }
+.ar-cele-glow {
+  position: absolute; inset: 0;
+  background: radial-gradient(ellipse at 50% 46%, color-mix(in srgb, var(--tc) 58%, transparent) 0%, color-mix(in srgb, var(--tc) 22%, rgba(4, 8, 18, 0.8)) 46%, rgba(4, 8, 18, 0.88) 100%);
+  backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+}
+.ar-cele-card {
+  position: relative; display: grid; justify-items: center; gap: 8px; width: min(88vw, 500px); padding: 22px 26px 24px; text-align: center;
+  border-radius: 28px; border: 2px solid var(--tc);
+  background: linear-gradient(160deg, color-mix(in srgb, var(--tc) 40%, #0b1018), color-mix(in srgb, var(--ta) 24%, #0b1018));
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--tc) 24%, transparent), 0 26px 70px rgba(0, 0, 0, 0.55);
+  animation: ar-stamp 0.42s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+}
+@keyframes ar-stamp { from { transform: scale(0.55) rotate(-6deg); opacity: 0; } to { transform: scale(1) rotate(0); opacity: 1; } }
+.ar-cele-card .ar-chip { min-width: 62px; height: 62px; font-size: 17px; border: 3px solid rgba(255, 255, 255, 0.85); }
+.ar-cele-word {
+  font-family: "Barlow Condensed", "Space Grotesk", sans-serif; font-size: clamp(48px, 15vw, 88px); line-height: 0.95; font-weight: 700; letter-spacing: 0.06em; color: #fff;
+  text-shadow: 0 4px 0 color-mix(in srgb, var(--tc) 65%, #000);
+}
+.ar-cele-player { max-width: 100%; font-size: clamp(18px, 5vw, 26px); font-weight: 800; overflow-wrap: anywhere; }
+.ar-cele-detail { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: center; gap: 4px 12px; color: #dfe6f3; }
+.ar-cele-detail em { font-style: normal; font-size: clamp(13px, 3.6vw, 16px); font-weight: 700; }
+.ar-cele-detail strong { font-family: "Space Grotesk", sans-serif; font-size: clamp(24px, 7vw, 34px); color: #fff; }
+.ar-cele.unsold .ar-cele-card { animation: ar-stamp 0.35s ease-out both, ar-shake 0.4s 0.3s ease-in-out; filter: saturate(0.5); }
+.ar-cele.unsold .ar-cele-word { letter-spacing: 0.1em; color: #cfd6e6; text-shadow: none; }
+@keyframes ar-shake { 0%, 100% { translate: 0; } 25% { translate: -7px; } 75% { translate: 7px; } }
+
+.ar-cele-fx { position: absolute; inset: 0; overflow: hidden; }
+.ar-confetti { position: absolute; top: -28px; border-radius: 2px; opacity: 0; animation-name: ar-fall; animation-timing-function: cubic-bezier(0.3, 0.1, 0.6, 1); animation-fill-mode: both; }
+@keyframes ar-fall {
+  0% { opacity: 1; transform: translate3d(0, 0, 0) rotate(var(--r)); }
+  100% { opacity: 1; transform: translate3d(var(--x), 108vh, 0) rotate(calc(var(--r) + 560deg)); }
+}
+.ar-popper { position: absolute; bottom: 7%; border-radius: 50%; opacity: 0; animation: ar-burst 0.95s cubic-bezier(0.1, 0.8, 0.3, 1) both; }
+.ar-popper.left { left: 5%; }
+.ar-popper.right { right: 5%; }
+@keyframes ar-burst {
+  0% { opacity: 1; transform: translate(0, 0) scale(0.5); }
+  65% { opacity: 1; }
+  100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(1.1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ar-cele-fx { display: none; }
+  .ar-cele-card, .ar-cele.unsold .ar-cele-card { animation: none; }
+}
+
 
 /* ---------- sets view opens big: live strip keeps bidding in reach ---------- */
 .ar-strip { flex: none; display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-bottom: 1px solid var(--ar-line); background: rgba(255, 255, 255, 0.03); }
@@ -580,3 +646,15 @@ html:has(.ar-app) #root { height: 100%; overflow: hidden; }
 .ar-sound { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 9px; border: 1px solid var(--ar-line); background: transparent; cursor: pointer; color: var(--ar-cyan); }
 .ar-sound.off { color: var(--ar-muted); }
 .ar-xi-team { display: inline-flex; align-items: center; gap: 10px; color: #fff; font-size: 14px; }
+
+/* ---------- mobile polish: header fits, blocked reason lives on the button, strip never wraps ---------- */
+@media (max-width: 899px) {
+  .ar-bid-note { display: none; }
+  .ar-live { display: none; }
+  .ar-lot-title { gap: 6px; }
+}
+.ar-strip-bid-amt, .ar-strip-time { white-space: nowrap; flex: none; }
+.ar-strip-bid { flex: 0 1 auto; min-width: 0; max-width: 46%; overflow: hidden; text-overflow: ellipsis; }
+
+/* keep the live-bids card on laptops (the short-phone rule above hides it below 700px height) */
+@media (min-width: 900px) { .ar-app .ar-feed { display: block; } .ar-app.is-ended .ar-feed, .ar-app.is-big .ar-feed { display: none; } }
