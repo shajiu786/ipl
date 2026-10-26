@@ -1,16 +1,7 @@
-```yaml
 name: Database Maintenance
 
 on:
   workflow_dispatch:
-    inputs:
-      action:
-        description: "Choose the task to run"
-        required: true
-        type: choice
-        options:
-          - preview_duplicates
-          - enrich_players
 
 permissions:
   contents: read
@@ -28,24 +19,12 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Run database maintenance
+      - name: Enrich player data
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          ACTION_CHOICE: ${{ inputs.action }}
         run: |
           set -e
           cd ipl-multiplayer-auction/server
           npm install --no-package-lock
-
-          echo "Applying database schema..."
           npm run db:schema
-
-          if [ "$ACTION_CHOICE" = "preview_duplicates" ]; then
-            npm run dedupe:players
-          elif [ "$ACTION_CHOICE" = "enrich_players" ]; then
-            npm run enrich:players
-          else
-            echo "Unknown action selected."
-            exit 1
-          fi
-```
+          npm run enrich:players
