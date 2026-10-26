@@ -2,6 +2,12 @@ name: Database Maintenance
 
 on:
   workflow_dispatch:
+    inputs:
+      apply_dedupe:
+        description: "Apply duplicate cleanup and enrich player data"
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -19,12 +25,27 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Enrich player data
+      - name: Run database maintenance
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          APPLY_DEDUPE: ${{ inputs.apply_dedupe }}
         run: |
           set -e
+
           cd ipl-multiplayer-auction/server
+
           npm install --no-package-lock
+
+          echo "Applying database schema..."
           npm run db:schema
-          npm run enrich:players
+
+          if [ "$APPLY_DEDUPE" = "true" ]; then
+            echo "Applying duplicate cleanup..."
+            npm run dedupe:players -- --apply
+
+            echo "Enriching player photos and statistics..."
+            npm run enrich:players
+          else
+            echo "Previewing duplicate cleanup..."
+            npm run dedupe:players
+          fi
