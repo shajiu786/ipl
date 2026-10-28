@@ -37,6 +37,6 @@ server.listen(port, () => console.log(`IPL auction API listening on ${port}`));
 
 // AUTO_ENRICH=1 fetches missing photos + IPL stats in the background after boot (no shell needed on free hosting).
 if (process.env.AUTO_ENRICH === '1') {
-  enrichAll(pool, { aliasFile: new URL('../../data/player_aliases.json', import.meta.url).pathname })
+  enrichAll(pool, { aliasFile: new URL('../../data/player_aliases.json', import.meta.url).pathname, photoFile: new URL('../../data/player_photos.json', import.meta.url).pathname })
     .catch(e => console.error('auto enrich failed:', e.message));
 }
