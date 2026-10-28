@@ -18,7 +18,8 @@ try {
   await pool.query(`ALTER TABLE players ADD COLUMN IF NOT EXISTS photo_source TEXT`);
   await enrichAll(pool, {
     force: args.has('--force'), stats: only !== 'photos', photos: only !== 'stats',
-    aliasFile: path.join(here, '../../data/player_aliases.json')
+    aliasFile: path.join(here, '../../data/player_aliases.json'),
+    photoFile: path.join(here, '../../data/player_photos.json')
   });
 } catch (e) { console.error(e.message); process.exitCode = 1; }
 finally { await pool.end(); }
