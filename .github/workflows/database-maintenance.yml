@@ -1,16 +1,20 @@
-```yaml
 name: Database Maintenance
 
 on:
   workflow_dispatch:
     inputs:
       apply_dedupe:
-        description: "Import both datasets, deduplicate, and enrich players"
+        description: "Apply: import both datasets, clean duplicates, fetch photos and stats"
         required: true
         type: boolean
         default: false
+      reset_mega2026:
+        description: "Delete all existing mega2026 players before importing (removes stale rows)"
+        required: false
+        type: boolean
+        default: false
       refresh_all:
-        description: "Force refresh all player photos and statistics"
+        description: "Also re-fetch photos and stats for every player (new season)"
         required: false
         type: boolean
         default: false
@@ -36,50 +40,52 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Install dependencies
-        working-directory: ipl-multiplayer-auction/server
-        run: npm install --no-package-lock
-
-      - name: Validate database configuration
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: |
-          if [ -z "$DATABASE_URL" ]; then
-            echo "::error::DATABASE_URL secret is missing"
-            exit 1
-          fi
-
       - name: Run database maintenance
-        working-directory: ipl-multiplayer-auction/server
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           APPLY_DEDUPE: ${{ inputs.apply_dedupe }}
+          RESET_MEGA2026: ${{ inputs.reset_mega2026 }}
           REFRESH_ALL: ${{ inputs.refresh_all }}
           WIKI_USER_AGENT: "ipl-auction-fan-project/1.0 (https://github.com/${{ github.repository }})"
         run: |
           set -e
 
+          cd ipl-multiplayer-auction/server
+
+          npm install --no-package-lock
+
           echo "Applying database schema..."
           npm run db:schema
 
           if [ "$APPLY_DEDUPE" = "true" ]; then
-            echo "Importing Legends dataset..."
+
+            if [ "$RESET_MEGA2026" = "true" ]; then
+              echo "Counts before reset:"
+              psql "$DATABASE_URL" -c "SELECT dataset, COUNT(*) FROM players GROUP BY dataset;"
+
+              echo "Deleting old mega2026 players..."
+              psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "DELETE FROM players WHERE dataset = 'mega2026';"
+            fi
+
+            echo "Importing IPL Legends Auction players..."
             npm run import:csv -- ../data/ipl_auction_players_24_sets.csv --dataset=legends
 
-            echo "Importing Mega Auction dataset..."
+            echo "Importing IPL Mega Auction 2026 players..."
             npm run import:csv -- ../data/ipl_mega_auction_2026_players.csv --dataset=mega2026
 
             echo "Applying duplicate cleanup..."
             npm run dedupe:players -- --apply
 
-            echo "Enriching players..."
+            echo "Enriching player photos and statistics..."
             if [ "$REFRESH_ALL" = "true" ]; then
               npm run enrich:players -- --force
             else
               npm run enrich:players
             fi
+
+            echo "Final counts:"
+            psql "$DATABASE_URL" -c "SELECT dataset, COUNT(*) FROM players GROUP BY dataset;"
           else
             echo "Previewing duplicate cleanup..."
             npm run dedupe:players
           fi
-```
