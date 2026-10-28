@@ -7,7 +7,6 @@ import {
   Users, Wallet, X, Volume2, VolumeX, Settings, ChevronDown, ChevronRight, ChevronUp, Timer, Flag, Ban,
   Copy, Home, Zap
 } from "lucide-react";
-import "./styles/crick.css";
 
 const API = (import.meta.env.VITE_API_URL || "http://localhost:4000").replace(/\/$/, "");
 const SOCKET_URL = (import.meta.env.VITE_SOCKET_URL || API).replace(/\/$/, "");
