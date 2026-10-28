@@ -1,0 +1,4 @@
+{
+  "_comment": "Optional. Map a player name to an image URL you want to use, e.g. copied from iplt20.com or bcci.tv (right-click the player photo, Copy image address). Manual photos always replace Wikipedia ones. Then run: npm run enrich:players",
+  "Virat Kohli": "https://example.com/replace-with-real-image-address.png"
+}
