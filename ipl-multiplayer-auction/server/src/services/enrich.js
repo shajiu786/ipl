@@ -226,12 +226,34 @@ export function inferRole(stats) {
 
 /* ------------------------------------------------------------------ database jobs */
 
+// Hand-picked photos always win: data/player_photos.json maps a player name to any image URL
+// (for example one copied from iplt20.com or bcci.tv). Applied after the Wikipedia step so --force never undoes it.
+export function readPhotoOverrides(file) {
+  try {
+    if (!file || !fs.existsSync(file)) return new Map();
+    const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return new Map(Object.entries(raw).filter(([k, v]) => !k.startsWith('_') && /^https?:\/\//i.test(String(v))).map(([k, v]) => [normName(k), String(v)]));
+  } catch { return new Map(); }
+}
+
+export async function applyPhotoOverrides(pool, overrides, log = () => {}) {
+  let n = 0;
+  for (const [key, url] of overrides) {
+    const r = await pool.query(
+      "UPDATE players SET photo_url=$2, photo_source='manual' WHERE regexp_replace(lower(name),'[^a-z0-9]+',' ','g')=$1",
+      [key, url]);
+    n += r.rowCount ?? 0;
+  }
+  if (overrides.size) log(`Applied ${overrides.size} manual photo URLs (${n} player rows).`);
+  return n;
+}
+
 let running = null;
 
 export async function enrichAll(pool, opts = {}) {
   if (running) return running;                       // never run two jobs at once
   running = (async () => {
-    const { photos = true, stats = true, force = false, log = console.log, fetchImpl = fetch, aliasFile } = opts;
+    const { photos = true, stats = true, force = false, log = console.log, fetchImpl = fetch, aliasFile, photoFile } = opts;
     const summary = { statsUpdated: 0, statsMissing: [], photosUpdated: 0, photosMissing: [] };
     const { rows: players } = await pool.query('SELECT id, name, role, photo_url, stats FROM players ORDER BY id');
     const needsStats = p => force || !p.stats || !p.stats.source;
@@ -281,6 +303,7 @@ export async function enrichAll(pool, opts = {}) {
       }
       summary.photosMissing = [...new Set(summary.photosMissing)];
     }
+    summary.manualPhotos = await applyPhotoOverrides(pool, readPhotoOverrides(photoFile), log);
     log(`Done. Stats updated: ${summary.statsUpdated}, photos updated: ${summary.photosUpdated}.`);
     if (summary.statsMissing.length) log(`No stats match for: ${summary.statsMissing.join(', ')}`);
     if (summary.photosMissing.length) log(`No photo found for: ${summary.photosMissing.join(', ')}`);
