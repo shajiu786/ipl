@@ -9,14 +9,14 @@ const apply = process.argv.includes('--apply');
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: process.env.DATABASE_URL?.includes('localhost') ? false : { rejectUnauthorized: false } });
 try {
   const { rows } = await pool.query(`
-    SELECT p.id, p.name, p.source_data,
+    SELECT p.id, p.name, p.source_data, p.dataset,
       (SELECT COUNT(*) FROM room_squad_players s WHERE s.player_id=p.id) +
       (SELECT COUNT(*) FROM auction_bids b WHERE b.player_id=p.id) +
       (SELECT COUNT(*) FROM playing_xi x WHERE x.player_id=p.id) AS refs
     FROM players p ORDER BY p.id`);
   const key = n => String(n).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
   const groups = new Map();
-  for (const r of rows) { const k = key(r.name); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r); }
+  for (const r of rows) { const k = `${r.dataset}|${key(r.name)}`; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r); }
   let remove = 0, blocked = 0;
   for (const list of groups.values()) {
     if (list.length < 2) continue;

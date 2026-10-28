@@ -2,10 +2,16 @@ import 'dotenv/config';
 import fs from 'node:fs';
 import { parse } from 'csv-parse/sync';
 import pg from 'pg';
+import path from 'node:path';
 import { normName } from '../src/services/auction.js';
+import { MODES, DEFAULT_MODE } from '../src/services/modes.js';
 const { Pool } = pg;
-const file = process.argv[2];
-if (!file) { console.error('Usage: npm run import:csv -- ../data/ipl_auction_players_24_sets.csv'); process.exit(1); }
+const file = process.argv.slice(2).find(a => !a.startsWith('--'));
+if (!file) { console.error('Usage: npm run import:csv -- ../data/ipl_mega_auction_2026_players.csv [--dataset=mega2026]'); process.exit(1); }
+// the dataset (game mode) is taken from --dataset=, otherwise from the CSV file name, otherwise legends
+const flag = process.argv.find(a => a.startsWith('--dataset='))?.split('=')[1];
+const dataset = flag || Object.values(MODES).find(m => path.basename(file) === m.csv)?.dataset || MODES[DEFAULT_MODE].dataset;
+if (!Object.values(MODES).some(m => m.dataset === dataset)) { console.error(`Unknown dataset "${dataset}". Use one of: ${Object.values(MODES).map(m => m.dataset).join(', ')}`); process.exit(1); }
 const records = parse(fs.readFileSync(file, 'utf8'), { columns: true, skip_empty_lines: true, bom: true, relax_column_count: true });
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: process.env.DATABASE_URL?.includes('localhost') ? false : { rejectUnauthorized: false } });
 const norm = s => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -28,6 +34,7 @@ try {
   await pool.query(`ALTER TABLE players ADD COLUMN IF NOT EXISTS stats JSONB NOT NULL DEFAULT '{}'::jsonb`);
   await pool.query(`ALTER TABLE players ADD COLUMN IF NOT EXISTS stats_updated_at TIMESTAMPTZ`);
   await pool.query(`ALTER TABLE players ADD COLUMN IF NOT EXISTS photo_source TEXT`);
+  await pool.query(`ALTER TABLE players ADD COLUMN IF NOT EXISTS dataset TEXT NOT NULL DEFAULT 'legends'`);
 
   // One row per person. The CSV repeats 45 players in later sets (duplicate_in_pool=True); keep the original.
   const chosen = new Map();
@@ -56,24 +63,24 @@ try {
 
     // Re-running the import updates the existing row instead of inserting a second copy.
     const existing = await pool.query(
-      `SELECT id FROM players WHERE ($1::text IS NOT NULL AND external_id=$1) OR regexp_replace(lower(name),'[^a-z0-9]+',' ','g')=$2 ORDER BY id LIMIT 1`,
-      [externalId || null, normName(name)]
+      `SELECT id FROM players WHERE dataset=$3 AND (($1::text IS NOT NULL AND external_id=$1) OR regexp_replace(lower(name),'[^a-z0-9]+',' ','g')=$2) ORDER BY id LIMIT 1`,
+      [externalId || null, normName(name), dataset]
     );
     if (existing.rowCount) {
       await pool.query(
         `UPDATE players SET name=$2, role=$3, nationality=$4, photo_url=COALESCE(photo_url,$5), base_price_paise=$6, source_data=$7::jsonb,
-           source_attribution=$8, data_cutoff=$9, external_id=$10 WHERE id=$1`,
-        [existing.rows[0].id, ...values]
+           source_attribution=$8, data_cutoff=$9, external_id=$10, dataset=$11 WHERE id=$1`,
+        [existing.rows[0].id, ...values, dataset]
       );
       updated++;
     } else {
       await pool.query(
-        `INSERT INTO players(name, role, nationality, photo_url, base_price_paise, source_data, source_attribution, data_cutoff, external_id)
-         VALUES($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9)`, values);
+        `INSERT INTO players(name, role, nationality, photo_url, base_price_paise, source_data, source_attribution, data_cutoff, external_id, dataset)
+         VALUES($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10)`, [...values, dataset]);
       inserted++;
     }
   }
-  console.log(`Players: ${inserted} added, ${updated} refreshed, ${skippedDuplicates} repeated CSV rows skipped (${chosen.size} unique players).`);
+  console.log(`[${dataset}] Players: ${inserted} added, ${updated} refreshed, ${skippedDuplicates} repeated CSV rows skipped (${chosen.size} unique players).`);
   console.log('Next: npm run enrich:players   (fetch photos + IPL stats)');
 } catch (e) { console.error(e.message); process.exitCode = 1; }
 finally { await pool.end(); }

@@ -11,8 +11,8 @@ const { registerSockets } = await import('../src/socket/register.js');
 
 globalThis.fetch = async () => { throw new Error('offline'); };   // photo lookups must never block the flow
 
-function loadPlayers({ doubleImport = false } = {}) {
-  const [head, ...lines] = fs.readFileSync(new URL('../../data/ipl_auction_players_24_sets.csv', import.meta.url), 'utf8').trim().split(/\r?\n/);
+function loadPlayers({ doubleImport = false, file = 'ipl_auction_players_24_sets.csv' } = {}) {
+  const [head, ...lines] = fs.readFileSync(new URL('../../data/' + file, import.meta.url), 'utf8').trim().split(/\r?\n/);
   const cols = head.split(',');
   let rows = lines.map((l, i) => {
     const v = l.split(','); const r = Object.fromEntries(cols.map((c, k) => [c, v[k]]));
@@ -73,8 +73,8 @@ function harness(opts) {
 const waitFor = async (cond, ms = 20000) => { const t = Date.now(); while (!cond()) { if (Date.now() - t > ms) throw new Error('timeout'); await new Promise(r => setTimeout(r, 2)); } };
 const fmtId = k => `participant-${k}`;
 
-async function playFullAuction({ doubleImport, durationSeconds = 0.02, incrementPaise = 2.5e8, strategy, roundsPerLot = 2 }) {
-  const h = harness({ players: loadPlayers({ doubleImport }), durationSeconds, incrementPaise });
+async function playFullAuction({ file, doubleImport, durationSeconds = 0.02, incrementPaise = 2.5e8, strategy, roundsPerLot = 2 }) {
+  const h = harness({ players: loadPlayers({ doubleImport, file }), durationSeconds, incrementPaise });
   const host = h.connect(fmtId('csk'));
   assert.equal((await host.call('room:join-live', { code: 'TEST01', participantId: fmtId('csk') })).ok, true);
   const clients = Object.fromEntries(TEAM_LIST.map(([k]) => { const c = h.connect(fmtId(k)); return [k, c]; }));
@@ -183,4 +183,13 @@ test('host Next goes straight to a live player (no dead "ready" state)', async (
   assert.equal(h.db.room.state.status, 'active');
   assert.notEqual(h.db.room.state.currentPlayerId, first);
   assert.ok(h.db.room.state.deadline);
+});
+
+test('IPL Mega Auction 2026 mode: all 356 players come up exactly once, set by set', async () => {
+  const { lots } = await playFullAuction({ file: 'ipl_mega_auction_2026_players.csv', strategy: (k, st, n) => ['csk', 'rcb'].includes(k) && n % 2 === 0 });
+  assert.equal(lots.length, 356);
+  assert.equal(new Set(lots.map(l => normName(l.name))).size, 356);
+  const seen = []; for (const l of lots) if (seen[seen.length - 1] !== l.set) seen.push(l.set);
+  assert.equal(new Set(seen).size, seen.length, 'a set never comes back after another one started');
+  assert.equal(seen.length, 43);
 });

@@ -244,8 +244,7 @@ h3 {
 }
 
 .home-hero > h1 span {
-  background: transparent;
-  color: #6b9be0;
+  color: var(--gold);
 }
 
 .home-hero > .muted {
@@ -2145,10 +2144,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 /* Lobby + entry screens share the same compact franchise visual language. */
 .home-page, .lobby-page { background: radial-gradient(ellipse at 50% 0%, #1d1a10 0%, #0b0c0d 55%); min-height: 100dvh; padding: clamp(18px,4vw,48px); }
 .home-hero { width: min(100%, 900px); margin: 5vh auto 0; }
-.home-hero h1 span {
-  background: transparent;
-  color: #6b9be0;
-}
+.home-hero h1 { font-family: "Space Grotesk",sans-serif; font-size: clamp(36px,7vw,68px); letter-spacing: -.055em; line-height: 1.03; }
 .home-hero h1 span { color: var(--gold); }
 .home-entry { border: 1px solid #2c2d30; background: #141517; border-radius: 18px; padding: clamp(16px,3vw,26px); }
 .home-grid { gap: 12px; }

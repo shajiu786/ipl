@@ -212,6 +212,18 @@ export async function fetchWikipediaPhoto(name, { fetchImpl = fetch } = {}) {
   return null;
 }
 
+// For players whose role is unknown ("PLAYER" in the mega-auction CSV) guess BAT / BOWL / AR from their IPL record.
+// Wicketkeepers cannot be told apart from batters here, so those stay as BAT.
+export function inferRole(stats) {
+  const bat = stats?.bat, bowl = stats?.bowl;
+  const batInns = bat?.inns || 0, bowlInns = bowl?.inns || 0;
+  if (batInns + bowlInns < 4) return null;                       // too little data to say
+  if (bowlInns && (!batInns || (bowl.balls >= 120 && bat.runs < 150))) return 'BOWL';
+  if (batInns && !bowlInns) return 'BAT';
+  if (bowl.balls >= 120 && bat.runs >= 150) return 'AR';
+  return batInns >= bowlInns ? 'BAT' : 'BOWL';
+}
+
 /* ------------------------------------------------------------------ database jobs */
 
 let running = null;
@@ -221,7 +233,7 @@ export async function enrichAll(pool, opts = {}) {
   running = (async () => {
     const { photos = true, stats = true, force = false, log = console.log, fetchImpl = fetch, aliasFile } = opts;
     const summary = { statsUpdated: 0, statsMissing: [], photosUpdated: 0, photosMissing: [] };
-    const { rows: players } = await pool.query('SELECT id, name, photo_url, stats FROM players ORDER BY id');
+    const { rows: players } = await pool.query('SELECT id, name, role, photo_url, stats FROM players ORDER BY id');
     const needsStats = p => force || !p.stats || !p.stats.source;
 
     if (stats && players.some(needsStats)) {
@@ -245,6 +257,10 @@ export async function enrichAll(pool, opts = {}) {
         if (!hit) { summary.statsMissing.push(p.name); continue; }
         await pool.query('UPDATE players SET stats=$2::jsonb, stats_updated_at=NOW() WHERE id=$1', [p.id, JSON.stringify({ ...hit.stats, matchedAs: hit.m.name, matchHow: hit.m.how })]);
         summary.statsUpdated++;
+        if ((!p.role || String(p.role).toUpperCase() === 'PLAYER') && inferRole(hit.stats)) {
+          await pool.query("UPDATE players SET role=$2 WHERE id=$1", [p.id, inferRole(hit.stats)]);
+          summary.rolesInferred = (summary.rolesInferred || 0) + 1;
+        }
         if (hit.m.how === 'ambiguous') log(`  check: "${p.name}" matched "${hit.m.name}" by surname+initial only`);
       }
       summary.statsMissing = [...new Set(summary.statsMissing)];

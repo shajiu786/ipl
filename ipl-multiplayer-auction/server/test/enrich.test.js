@@ -122,3 +122,12 @@ test('enrichAll updates stats and photos through the database layer', async () =
   const statsWrite = updates.find(u => u[1][0] === 1 && u[1][1].startsWith('{'));
   assert.equal(JSON.parse(statsWrite[1][1]).bat.runs, 13);
 });
+
+test('inferRole fills unknown roles from IPL stats only when there is enough data', async () => {
+  const { inferRole } = await import('../src/services/enrich.js');
+  assert.equal(inferRole({}), null);
+  assert.equal(inferRole({ bat: { inns: 2, runs: 10 } }), null);
+  assert.equal(inferRole({ bat: { inns: 20, runs: 500 } }), 'BAT');
+  assert.equal(inferRole({ bowl: { inns: 20, balls: 400, runs: 500, wkts: 20 } }), 'BOWL');
+  assert.equal(inferRole({ bat: { inns: 20, runs: 400 }, bowl: { inns: 15, balls: 300 } }), 'AR');
+});

@@ -1,18 +1,26 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { MODES, modeKeys, modeOfConfig, DEFAULT_MODE } from '../services/modes.js';
 import { PURSE_PAISE, TEAM_LIST, TEAM_NAMES, makeCode, emptyState, dedupePlayers, publicState } from '../services/auction.js';
 
 export function createApiRouter(pool) {
   const router = Router();
-  const createSchema = z.object({ name: z.string().trim().min(2).max(60), displayName: z.string().trim().min(1).max(40), participantId: z.string().min(8).max(100), config: z.object({ openingBidPaise: z.number().int().positive().optional(), incrementPaise: z.number().int().positive().optional(), durationSeconds: z.number().int().min(5).max(120).optional() }).optional() });
+  const createSchema = z.object({ name: z.string().trim().min(2).max(60), displayName: z.string().trim().min(1).max(40), participantId: z.string().min(8).max(100), mode: z.enum(modeKeys).optional(), config: z.object({ openingBidPaise: z.number().int().positive().optional(), incrementPaise: z.number().int().positive().optional(), durationSeconds: z.number().int().min(5).max(120).optional() }).optional() });
   router.get('/players', async (req, res) => {
     try {
       const page = Math.max(1, Number(req.query.page) || 1), limit = Math.min(500, Math.max(1, Number(req.query.limit) || 30));
       const q = String(req.query.q || '').trim(), role = String(req.query.role || '').trim();
+      // the pool depends on the room's mode (?room=CODE) or an explicit ?dataset=
+      let dataset = MODES[req.query.dataset]?.dataset || null;
+      if (!dataset && req.query.room) {
+        const r = await pool.query('SELECT config FROM auction_rooms WHERE code=$1', [String(req.query.room).toUpperCase()]);
+        if (r.rowCount) dataset = MODES[modeOfConfig(r.rows[0].config)].dataset;
+      }
+      dataset = dataset || MODES[DEFAULT_MODE].dataset;
       const result = await pool.query(
         `SELECT id, name, role, nationality, batting_style, bowling_style, photo_url, base_price_paise, source_attribution, data_cutoff, source_data, stats
-         FROM players WHERE ($1 = '' OR name ILIKE '%' || $1 || '%') AND ($2 = '' OR role ILIKE '%' || $2 || '%')
-         ORDER BY id`, [q, role]);
+         FROM players WHERE dataset=$3 AND ($1 = '' OR name ILIKE '%' || $1 || '%') AND ($2 = '' OR role ILIKE '%' || $2 || '%')
+         ORDER BY id`, [q, role, dataset]);
       // one entry per person, even if the table holds repeated rows
       const unique = dedupePlayers(result.rows).sort((a, b) => String(a.name).localeCompare(String(b.name)));
       res.json({ data: unique.slice((page - 1) * limit, page * limit), page, limit, total: unique.length });
@@ -22,10 +30,17 @@ export function createApiRouter(pool) {
     try { const r = await pool.query('SELECT * FROM players WHERE id=$1', [req.params.id]); if (!r.rowCount) return res.status(404).json({ error:'player_not_found' }); res.json(r.rows[0]); }
     catch { res.status(400).json({ error:'invalid_player_id' }); }
   });
+  router.get('/modes', async (req, res) => {
+    try {
+      const counts = await pool.query('SELECT dataset, COUNT(*)::int AS n FROM players GROUP BY dataset');
+      const byDataset = Object.fromEntries(counts.rows.map(r => [r.dataset, r.n]));
+      res.json({ data: Object.values(MODES).map(m => ({ key: m.key, name: m.name, tagline: m.tagline, players: byDataset[m.dataset] || 0 })) });
+    } catch { res.status(500).json({ error: 'modes_query_failed' }); }
+  });
   router.post('/rooms', async (req, res) => {
     const parsed = createSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error:'invalid_request', details: parsed.error.flatten() });
-    const { name, displayName, participantId, config = {} } = parsed.data;
+    const { name, displayName, participantId, mode = DEFAULT_MODE, config = {} } = parsed.data;
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -34,7 +49,7 @@ export function createApiRouter(pool) {
       const state = emptyState();
       const room = await client.query(
         `INSERT INTO auction_rooms(code,name,host_participant_id,config,state) VALUES($1,$2,$3,$4::jsonb,$5::jsonb) RETURNING *`,
-        [code, name, participantId, JSON.stringify({ openingBidPaise:200000000, incrementPaise:250000000, durationSeconds:10, ...config }), JSON.stringify(state)]);
+        [code, name, participantId, JSON.stringify({ openingBidPaise:200000000, incrementPaise:250000000, durationSeconds:10, ...config, mode }), JSON.stringify(state)]);
       await client.query(`INSERT INTO room_participants(room_id,participant_id,display_name,is_host) VALUES($1,$2,$3,true)`, [room.rows[0].id, participantId, displayName]);
       await client.query('COMMIT');
       res.status(201).json({ room: room.rows[0], participant: { participantId, displayName, isHost: true }, teams: TEAM_LIST });

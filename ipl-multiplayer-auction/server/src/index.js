@@ -25,7 +25,8 @@ for (const sql of [
   `ALTER TABLE players ADD COLUMN IF NOT EXISTS external_id TEXT`,
   `ALTER TABLE players ADD COLUMN IF NOT EXISTS stats JSONB NOT NULL DEFAULT '{}'::jsonb`,
   `ALTER TABLE players ADD COLUMN IF NOT EXISTS stats_updated_at TIMESTAMPTZ`,
-  `ALTER TABLE players ADD COLUMN IF NOT EXISTS photo_source TEXT`
+  `ALTER TABLE players ADD COLUMN IF NOT EXISTS photo_source TEXT`,
+  `ALTER TABLE players ADD COLUMN IF NOT EXISTS dataset TEXT NOT NULL DEFAULT 'legends'`
 ]) await pool.query(sql).catch(e => console.error('migration skipped:', e.message));
 
 const io = new Server(server, { cors: { origin: origins } });

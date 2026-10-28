@@ -9,6 +9,7 @@ import {
 import "./styles/app.css";
 import "./styles/theme.css";
 import "./styles/auction.css";
+import "./styles/modes.css";
 
 const API = (import.meta.env.VITE_API_URL || "http://localhost:4000").replace(/\/$/, "");
 const SOCKET_URL = (import.meta.env.VITE_SOCKET_URL || API).replace(/\/$/, "");
@@ -83,6 +84,13 @@ const ERRORS = {
 };
 const friendly = code => ERRORS[code] || code || "Something went wrong";
 
+// Game modes: each one auctions its own player dataset (see server/src/services/modes.js)
+const MODES = {
+  legends: { key: "legends", name: "IPL Legends Auction", short: "Legends", tagline: "Iconic IPL stars from every era, auctioned in themed sets.", badge: "Classic" },
+  mega2026: { key: "mega2026", name: "IPL Mega Auction 2026", short: "Mega 2026", tagline: "The real IPL 2026 auction pool: capped and uncapped players at official base prices.", badge: "New" }
+};
+const modeOf = r => MODES[r?.config?.mode] || MODES.legends;
+
 const CITY = { csk: "Chennai", mi: "Mumbai", rcb: "Bengaluru", kkr: "Kolkata", rr: "Rajasthan", srh: "Hyderabad", dc: "Delhi", pbks: "Punjab", gt: "Gujarat", lsg: "Lucknow" };
 const FLAGS = { india: "🇮🇳", australia: "🇦🇺", england: "🇬🇧", "south africa": "🇿🇦", "new zealand": "🇳🇿", "west indies": "🏝️", afghanistan: "🇦🇫", "sri lanka": "🇱🇰", bangladesh: "🇧🇩" };
 const isIndian = n => !n || /india|indian|local/i.test(n);
@@ -150,6 +158,8 @@ export default function App() {
   const [room, setRoom] = useState(null);
   const [participants, setParticipants] = useState([]);
   const [players, setPlayers] = useState([]);
+  const [mode, setMode] = useState("legends");
+  const [modeCounts, setModeCounts] = useState({});
   const [auction, setAuction] = useState({ status: "waiting", currentBidPaise: 0 });
   const [bids, setBids] = useState([]);
   const [messages, setMessages] = useState([]);
@@ -219,13 +229,18 @@ export default function App() {
     return owners;
   }, [participants]);
 
-  const loadPlayers = useCallback(async () => {
+  const loadPlayers = useCallback(async code => {
     try {
-      const response = await api.get("/api/players", { params: { limit: 500 } });
+      // the server picks the pool that belongs to this room's mode
+      const response = await api.get("/api/players", { params: { limit: 500, room: code } });
       setPlayers(response.data.data || []);
     } catch (error) {
       setNotice(`Could not load players: ${getError(error)}`);
     }
+  }, []);
+
+  useEffect(() => {
+    api.get("/api/modes").then(r => setModeCounts(Object.fromEntries((r.data?.data || []).map(m => [m.key, m.players])))).catch(() => {});
   }, []);
 
   const loadRoomData = useCallback(async code => {
@@ -475,7 +490,7 @@ export default function App() {
 
     socket.on("connect_error", () => setNotice("Connection issue. Retrying…"));
 
-    await Promise.all([loadRoomData(code), loadPlayers()]);
+    await Promise.all([loadRoomData(code), loadPlayers(code)]);
   }, [loadPlayers, loadRoomData, playTone]);
 
   useEffect(() => () => {
@@ -557,9 +572,10 @@ export default function App() {
     try {
       const id = makeId();
       const response = await api.post("/api/rooms", {
-        name: `${displayName.trim()}'s IPL Auction`,
+        name: `${displayName.trim()}'s ${MODES[mode].name}`,
         displayName: displayName.trim(),
-        participantId: id
+        participantId: id,
+        mode
       });
       const rawParticipant = response.data?.participant || {};
       const p = {
@@ -814,10 +830,21 @@ export default function App() {
           <div className="home-entry">
             <label htmlFor="display-name">Your name</label>
             <input id="display-name" value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="Enter your name" maxLength={40} required />
+            <span className="mode-label">Choose a game mode</span>
+            <div className="mode-picker" role="radiogroup" aria-label="Game mode">
+              {Object.values(MODES).map(m => (
+                <button key={m.key} type="button" role="radio" aria-checked={mode === m.key} className={`mode-card ${mode === m.key ? "on" : ""}`} onClick={() => setMode(m.key)}>
+                  <span className="mode-top"><b>{m.name}</b><em className={m.key === "mega2026" ? "new" : ""}>{m.badge}</em></span>
+                  <small>{m.tagline}</small>
+                  <span className="mode-meta">{modeCounts[m.key] ? `${modeCounts[m.key]} players` : "Player pool"} · 120 Cr purse · 25-man squads</span>
+                </button>
+              ))}
+              {mode === "mega2026" && <p className="mode-note">Heads up: the real 2026 IPL auction was a mini auction. This mode uses its player pool, but every franchise starts from scratch like a mega auction.</p>}
+            </div>
             <div className="home-grid home-grid-simple">
               <form className="home-card home-card-simple" onSubmit={createRoom}>
                 <button className="primary-button" disabled={busy} type="submit">
-                  <Crown size={17} /> {busy ? "Creating..." : "Create Room"}
+                  <Crown size={17} /> {busy ? "Creating..." : `Create ${MODES[mode].short} Room`}
                 </button>
               </form>
               <form className="home-card home-card-simple" onSubmit={joinRoom}>
@@ -840,7 +867,7 @@ export default function App() {
       <main className="lobby-page">
         <header className="lobby-header">
           <div>
-            <p className="eyebrow">FRANCHISE DRAFT</p>
+            <p className="eyebrow">{modeOf(room).name.toUpperCase()}</p>
             <h1>Teams & owners</h1>
             <p className="muted">Room code: <b>{roomCode}</b> · Share this code with friends.</p>
           </div>
@@ -1010,7 +1037,7 @@ export default function App() {
       <section className="ar-card ar-lot">
         <div className="ar-lot-head">
           <div className="ar-lot-title">
-            <span>LOT {currentPlayer ? lotNo : "—"}<em className="ar-lot-sub"> • IPL PLAYER AUCTION</em></span>
+            <span>LOT {currentPlayer ? lotNo : "—"}<em className="ar-lot-sub"> • {modeOf(room).name.toUpperCase()}</em></span>
             <span className="ar-live"><Play size={10} fill="currentColor" /> LIVE</span>
             {setInfo && <span className="ar-setchip" title={setInfo.name}>SET {setInfo.position}/{setInfo.totalSets}<em> · {setInfo.remaining} left</em></span>}
           </div>

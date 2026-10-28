@@ -76,3 +76,16 @@ test('publicState hides the order, exposes set progress and next bid', () => {
   assert.equal(pub.durationSeconds, 8);
   assert.deepEqual(pub.setProgress, { key: '4', name: 'Set 4', position: 2, totalSets: 2, total: 3, remaining: 2 });
 });
+
+test('mega 2026 CSV: unique players, valid roles and base prices, official counts', () => {
+  const [head, ...lines] = fs.readFileSync(new URL('../../data/ipl_mega_auction_2026_players.csv', import.meta.url), 'utf8').trim().split(/\r?\n/);
+  const cols = head.split(',');
+  const rows = lines.map(l => { const v = l.split(','); return Object.fromEntries(cols.map((c, k) => [c, v[k]])); });
+  assert.equal(rows.length, 356);
+  assert.equal(new Set(rows.map(r => normName(r.player_name))).size, 356);
+  assert.ok(rows.every(r => ['BAT', 'WK', 'AR', 'BOWL', 'PLAYER'].includes(r.role)));
+  assert.ok(rows.every(r => [30, 40, 50, 75, 100, 125, 150, 200].includes(Number(r.base_price_lakh))));
+  assert.equal(rows.filter(r => r.player_tier === 'Capped').length, 115);        // 16 Indian + 99 overseas, per Wisden / BCCI
+  assert.equal(rows.filter(r => r.nationality !== 'India').length, 115);         // 99 capped + 16 uncapped overseas
+  assert.equal(rows.filter(r => Number(r.set_number) <= 10).length, 70);         // official first pass = players 1-70
+});

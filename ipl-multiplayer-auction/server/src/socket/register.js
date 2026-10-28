@@ -3,6 +3,7 @@ import {
   TEAM_NAMES, PURSE_PAISE, nextBidAmount, bidBlocker, buildAuctionSets, normName, setKeyOf, setNameOf, publicState
 } from '../services/auction.js';
 import { enrichPlayerPhoto } from '../services/enrich.js';
+import { datasetOfRoom } from '../services/modes.js';
 
 const PLAYER_COLS = 'id,name,role,nationality,batting_style,bowling_style,photo_url,base_price_paise,source_data,stats';
 const ADVANCE_DELAY_MS = Number(process.env.ADVANCE_DELAY_MS || 3000);          // gap between SOLD/UNSOLD and the next player (the pop-up shows for ~2s)
@@ -65,9 +66,10 @@ export function registerSockets(io, pool) {
 
   /* ------------------------------------------------------------------ player order (no repeats) */
   async function loadOrder(ctx) {
-    const { client, state } = ctx;
+    const { client, room, state } = ctx;
     if (Array.isArray(state.auctionSets) && state.auctionSets.length) return;
-    const { rows } = await client.query('SELECT id, name, source_data FROM players ORDER BY id');
+    // each mode auctions only its own dataset
+    const { rows } = await client.query('SELECT id, name, source_data FROM players WHERE dataset=$1 ORDER BY id', [datasetOfRoom(room)]);
     // Rooms created by the previous version have no auctionSets: keep what was already auctioned.
     const byId = new Map(rows.map(r => [Number(r.id), r]));
     const names = new Set(state.doneNames || []);

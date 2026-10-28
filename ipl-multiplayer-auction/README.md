@@ -54,6 +54,26 @@ npm run import:csv -- ../data/ipl_auction_players_24_sets.csv
 ```
 The importer preserves original CSV columns in `source_data` JSONB and maps common name/role/base-price columns when detected, including `base_price_lakh` from the supplied CSV. Statistics and photos are filled by `npm run enrich:players` (see below); this does not certify the data as verified. Review source attribution and cutoff before public redistribution.
 
+## Game modes
+Pick a mode on the home screen when creating a room (joiners follow the room's mode automatically).
+
+| Mode | Dataset file | Players |
+|---|---|---|
+| **IPL Legends Auction** (the original game) | `data/ipl_auction_players_24_sets.csv` | 243 unique |
+| **IPL Mega Auction 2026** | `data/ipl_mega_auction_2026_players.csv` | 356 |
+
+Load both datasets into the same database (each is stored under its own `dataset`, so they never mix):
+```bash
+cd server
+npm run db:schema
+npm run import:csv -- ../data/ipl_auction_players_24_sets.csv
+npm run import:csv -- ../data/ipl_mega_auction_2026_players.csv
+npm run enrich:players
+```
+Existing players in your database automatically become the *Legends* dataset.
+
+**About the Mega 2026 data.** The real IPL 2026 auction (16 Dec 2025, Abu Dhabi) was a *mini* auction, not a mega auction. The mode keeps the name you chose, uses that auction's player pool and official base prices, and starts every franchise from scratch (120 Cr, 25 players) like a mega auction. Names, nationality, capped/uncapped status and base prices come from the BCCI/IPL player list as reported by Wisden and NewsX. Sets 1-10 follow the official auction sets; later sets follow the official list order. Role is `PLAYER` where the role could not be established (about 50 uncapped players): `npm run enrich:players` fills those in from IPL stats where a player has an IPL record. The list holds 356 of the roughly 359-369 players that were in the pool, so a few late additions may be missing. Correct or add rows in the CSV and re-run the import any time.
+
 ## Player photos and stats (fetch + update)
 Photos come from each player's Wikipedia page; career IPL stats (matches, runs, average, strike rate, wickets, economy) are computed from the free Cricsheet ball-by-ball archive. Neither is in the CSV, so fetch them once after importing:
 ```bash
