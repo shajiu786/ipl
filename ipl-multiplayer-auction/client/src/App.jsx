@@ -390,7 +390,7 @@ export default function App() {
     api.get("/api/modes").then(r => setModeCounts(Object.fromEntries((r.data?.data || []).map(m => [m.key, m.players])))).catch(() => {});
   }, []);
 
-  const loadRoomData = useCallback(async code => {
+  const loadRoomData = useCallback(async (code, teamForDraft = myTeam) => {
     if (!code) return;
     try {
       const [roomR, bidR, purseR, squadR, xiR, chatR] = await Promise.all([
@@ -408,13 +408,24 @@ export default function App() {
       setAuction(nextRoom.state || { status: nextRoom.status, currentBidPaise: 0 });
       setBids(bidR.data.data || []);
       setPurses(purseR.data.data || []);
-      setSquads(squadR.data.data || []);
-      setXi(xiR.data.data || []);
+      const squadRows = squadR.data.data || [];
+      const serverXi = xiR.data.data || [];
+      setSquads(squadRows);
+      let restoredXi = serverXi;
+      try {
+        const draftIds = JSON.parse(localStorage.getItem(`auctionroom-xi-draft:${code}:${teamForDraft || "spectator"}`) || "null");
+        if (Array.isArray(draftIds)) {
+          const ownDraft = draftIds.map(id => squadRows.find(p => p.team_key === teamForDraft && Number(p.id) === Number(id))).filter(Boolean)
+            .map((p, index) => ({ ...p, team_key: teamForDraft, position: index + 1 }));
+          restoredXi = [...serverXi.filter(p => p.team_key !== teamForDraft), ...ownDraft];
+        }
+      } catch {}
+      setXi(restoredXi);
       setMessages(chatR.data.data || []);
     } catch (error) {
       setNotice(`Room data: ${getError(error, "could_not_load_room")}`);
     }
-  }, []);
+  }, [myTeam]);
 
   // The socket handlers are created once on room entry, so they read the live setting through a ref.
   useEffect(() => {
@@ -466,7 +477,7 @@ export default function App() {
           if (Array.isArray(response.participants)) setParticipants(response.participants);
           // Re-fetch durable data after every successful connect/reconnect so bids, squads,
           // messages and the saved XI are restored rather than relying only on missed socket events.
-          loadRoomData(code);
+          loadRoomData(code, p.teamKey || p.team_key || null);
           setNotice("Connected · room state synced");
           // After a reconnect the server forgets who was in voice: rejoin with fresh peer links.
           if (localStreamRef.current) {
@@ -926,6 +937,7 @@ export default function App() {
         teamKey: xiTeam,
         playerIds: selectedXI.map(p => Number(p.id))
       });
+      try { localStorage.removeItem(`auctionroom-xi-draft:${roomCode}:${xiTeam || "spectator"}`); } catch {}
       setNotice("Playing XI saved");
       await loadRoomData(roomCode);
     } catch (error) {
@@ -933,13 +945,23 @@ export default function App() {
     }
   };
 
+  const persistXiDraft = ids => {
+    try { localStorage.setItem(`auctionroom-xi-draft:${roomCode}:${xiTeam || "spectator"}`, JSON.stringify(ids.map(Number))); } catch {}
+  };
+
   const toggleXI = playerId => {
     const already = selectedXI.some(p => Number(p.id) === Number(playerId));
     if (already) {
-      setXi(old => old.filter(p => !(p.team_key === xiTeam && Number(p.id) === Number(playerId))));
+      const next = selectedXI.filter(p => Number(p.id) !== Number(playerId));
+      persistXiDraft(next.map(p => p.id));
+      setXi(old => [...old.filter(p => p.team_key !== xiTeam), ...next.map((p, index) => ({ ...p, team_key: xiTeam, position: index + 1 }))]);
     } else if (selectedXI.length < 11) {
       const player = mySquad.find(p => Number(p.id) === Number(playerId));
-      if (player) setXi(old => [...old, { ...player, team_key: xiTeam, position: selectedXI.length + 1 }]);
+      if (player) {
+        const next = [...selectedXI, { ...player, team_key: xiTeam, position: selectedXI.length + 1 }];
+        persistXiDraft(next.map(p => p.id));
+        setXi(old => [...old.filter(p => p.team_key !== xiTeam), ...next]);
+      }
     } else {
       setNotice("Playing XI is limited to 11 players.");
     }
@@ -954,7 +976,9 @@ export default function App() {
       if (from < 0 || to < 0 || to >= teamRows.length) return old;
       const [moved] = teamRows.splice(from, 1);
       teamRows.splice(to, 0, moved);
-      return [...otherRows, ...teamRows.map((p, index) => ({ ...p, position: index + 1 }))];
+      const ordered = teamRows.map((p, index) => ({ ...p, position: index + 1 }));
+      persistXiDraft(ordered.map(p => p.id));
+      return [...otherRows, ...ordered];
     });
   };
 
@@ -1013,7 +1037,7 @@ export default function App() {
   const claimed = Object.keys(teamOwners).length;
   const myName = participant?.displayName || participant?.display_name || displayName || "Participant";
   const chatMessages = messages
-    .filter(m => !m.auctionEvent)
+    .filter(m => !m.auctionEvent && String(m.display_name || "").trim().toUpperCase() !== "AUCTION UPDATE" && !["sold", "unsold", "skipped"].includes(String(m.kind || "").toLowerCase()))
     .slice()
     .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
   const feed = [
@@ -1161,8 +1185,8 @@ export default function App() {
       </div>
       <div className="cx-xi-list">
         {mySquad.map(player => (
-          <label key={player.id}>
-            <input type="checkbox" checked={selectedXI.some(p => Number(p.id) === Number(player.id))} onChange={() => toggleXI(player.id)} />
+          <div className={`cx-xi-player ${selectedXI.some(p => Number(p.id) === Number(player.id)) ? "selected" : ""}`} key={player.id}>
+            <input type="checkbox" aria-label={`Select ${player.name} for Playing XI`} checked={selectedXI.some(p => Number(p.id) === Number(player.id))} onChange={() => toggleXI(player.id)} />
             <span><b>{player.name}</b><small>{roleLabel(player.role)}{!isIndian(player.nationality) ? " · Overseas ✈️" : ""}</small></span>
             <strong>{money(player.purchase_price_paise)}</strong>
             {selectedXI.some(p => Number(p.id) === Number(player.id)) && <span className="cx-xi-order">
@@ -1170,7 +1194,7 @@ export default function App() {
               <button type="button" className="cx-btn square" disabled={selectedXI.findIndex(p => Number(p.id) === Number(player.id)) === 0} onClick={e => { e.preventDefault(); e.stopPropagation(); reorderXI(player.id, -1); }} aria-label={`Move ${player.name} up`}><ChevronUp size={14} /></button>
               <button type="button" className="cx-btn square" disabled={selectedXI.findIndex(p => Number(p.id) === Number(player.id)) === selectedXI.length - 1} onClick={e => { e.preventDefault(); e.stopPropagation(); reorderXI(player.id, 1); }} aria-label={`Move ${player.name} down`}><ChevronDown size={14} /></button>
             </span>}
-          </label>
+          </div>
         ))}
       </div>
       {!mySquad.length && <p className="cx-empty">You haven't bought any players yet.</p>}
@@ -1636,7 +1660,8 @@ export default function App() {
             {railTab === "activity" ? (
               <ul className="cx-feed cx-scroll">
                 {visibleFeed.map(item => item.kind === "bid" ? (
-                  <li key={item.id} className={item.bid.team_key && item.bid.team_key === myTeam ? "mine" : ""}>
+                  <li key={item.id} className={`cx-bid-feed-item ${item.bid.team_key && item.bid.team_key === myTeam ? "mine" : ""}`}>
+                    <div className="cx-bid-preview"><span>{item.bid.player_name || currentPlayer?.name || "Player"}<small>{item.bid.team_key && item.bid.team_key === myTeam ? "Your team" : CITY[item.bid.team_key] || item.bid.display_name || "Bidder"}</small></span><b>{money(item.bid.amount_paise)}</b></div>
                     <p>{item.bid.team_key && item.bid.team_key === myTeam ? "You" : CITY[item.bid.team_key] || item.bid.display_name || "Bidder"} bid <b>{money(item.bid.amount_paise)}</b> for {item.bid.player_name || currentPlayer?.name || "player"}</p>
                     <time>{clock(item.at)}</time>
                   </li>
