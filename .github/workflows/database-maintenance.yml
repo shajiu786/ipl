@@ -9,7 +9,7 @@ on:
         type: boolean
         default: false
       reset_mega2026:
-        description: "Delete all existing mega2026 players before importing (removes stale rows)"
+        description: "Delete all existing mega2026 players (and rows referencing them) before importing"
         required: false
         type: boolean
         default: false
@@ -63,8 +63,29 @@ jobs:
               echo "Counts before reset:"
               psql "$DATABASE_URL" -c "SELECT dataset, COUNT(*) FROM players GROUP BY dataset;"
 
-              echo "Deleting old mega2026 players..."
-              psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "DELETE FROM players WHERE dataset = 'mega2026';"
+              echo "Deleting old mega2026 players and rows that reference them..."
+              psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          DECLARE r record;
+          BEGIN
+            FOR r IN
+              SELECT c.conrelid::regclass AS tbl, a.attname AS col, a.attnotnull AS required
+              FROM pg_constraint c
+              JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
+              WHERE c.contype = 'f' AND c.confrelid = 'players'::regclass
+            LOOP
+              IF r.required THEN
+                EXECUTE format('DELETE FROM %s WHERE %I IN (SELECT id FROM players WHERE dataset = %L)', r.tbl, r.col, 'mega2026');
+              ELSE
+                EXECUTE format('UPDATE %s SET %I = NULL WHERE %I IN (SELECT id FROM players WHERE dataset = %L)', r.tbl, r.col, r.col, 'mega2026');
+              END IF;
+            END LOOP;
+            DELETE FROM players WHERE dataset = 'mega2026';
+          END $$;
+          SQL
+
+              echo "Counts after reset:"
+              psql "$DATABASE_URL" -c "SELECT dataset, COUNT(*) FROM players GROUP BY dataset;"
             fi
 
             echo "Importing IPL Legends Auction players..."
