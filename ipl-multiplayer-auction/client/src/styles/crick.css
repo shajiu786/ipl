@@ -529,3 +529,23 @@ h1, h2, h3, p { margin: 0; }
 @media (prefers-reduced-motion: reduce) {
   .cx-reaction-bar button, .cx-reaction-bursts span { animation:none; transition:none; }
 }
+
+/* Playing XI selection cards: keep controls independent so reordering never toggles selection. */
+.cx-xi-list .cx-xi-player { display:flex; align-items:center; gap:12px; padding:12px 14px; border:1px solid var(--line); border-radius:12px; background:var(--panel); cursor:default; min-width:0; }
+.cx-xi-list .cx-xi-player.selected { border-color:var(--orange); background:rgba(61,123,255,.07); }
+.cx-xi-list .cx-xi-player > input { flex:none; width:16px; height:16px; accent-color:var(--orange); cursor:pointer; }
+.cx-xi-list .cx-xi-player > span:not(.cx-xi-order) { flex:1; min-width:0; display:grid; gap:2px; }
+.cx-xi-order { flex:none; display:flex !important; align-items:center; gap:4px; }
+.cx-xi-order .cx-btn { width:28px; height:28px; padding:0; }
+.cx-bid-preview { display:none; }
+@media (max-width: 640px) {
+  .cx-feed { padding-left:0; gap:7px; }
+  .cx-feed::before, .cx-feed li::before { display:none; }
+  .cx-feed li:not(.empty) { padding:9px 10px; border:1px solid var(--line); border-radius:10px; background:rgba(16,24,42,.72); gap:4px; }
+  .cx-bid-preview { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+  .cx-bid-preview > span { display:grid; gap:2px; min-width:0; font-size:11px; font-weight:800; overflow-wrap:anywhere; }
+  .cx-bid-preview small { font-size:9px; color:var(--muted); font-weight:600; }
+  .cx-bid-preview > b { flex:none; color:var(--amber); font-size:12px; font-variant-numeric:tabular-nums; }
+  .cx-feed li.cx-bid-feed-item p { display:none; }
+  .cx-feed li.cx-bid-feed-item time { font-size:9px; }
+}
