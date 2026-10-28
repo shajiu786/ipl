@@ -85,8 +85,11 @@ export function nextBidAmount(room, state) {
 }
 
 // Why this franchise cannot place the next bid, or null when the bid is allowed.
-export function bidBlocker({ squadCount, spentPaise, nextPaise }) {
+export function bidBlocker({ squadCount, spentPaise, nextPaise, overseasCount = 0, playerOverseas = false }) {
   if (Number(squadCount) >= MAX_SQUAD) return 'squad_full';
+  // IPL auction mode rule: a franchise may buy no more than eight overseas players.
+  // Missing nationality is treated as domestic, matching the client-side fallback.
+  if (playerOverseas && Number(overseasCount || 0) >= 8) return 'overseas_limit';
   if (PURSE_PAISE - Number(spentPaise || 0) < Number(nextPaise)) return 'insufficient_purse';
   return null;
 }
@@ -95,7 +98,7 @@ export function bidBlocker({ squadCount, spentPaise, nextPaise }) {
 
 // Strip server-only bookkeeping (full order, id lists per set) and add derived fields.
 export function publicState(room, state) {
-  const { auctionPlayerOrder, auctionSets, queue, unsoldPlayers, doneNames, ...rest } = state || {};
+  const { auctionPlayerOrder, auctionSets, queue, unsoldPlayers, doneNames, bidRequestCache, ...rest } = state || {};
   const sets = Array.isArray(auctionSets) ? auctionSets : [];
   const done = new Set((state?.completedPlayerIds || []).map(Number));
   const curKey = state?.currentSetNumber != null ? String(state.currentSetNumber) : null;

@@ -87,15 +87,23 @@ export function registerSockets(io, pool) {
     const { client, state } = ctx;
     const done = new Set((state.completedPlayerIds || []).map(Number));
     const names = new Set(state.doneNames || []);
-    for (const set of state.auctionSets) {
-      for (const id of set.ids) {
+    const deferredSets = new Set((state.deferredSetKeys || []).map(String));
+    const deferredPlayers = new Set((state.deferredPlayerIds || []).map(Number));
+    const orderedSets = [
+      ...state.auctionSets.filter(s => !deferredSets.has(String(s.key))),
+      ...state.auctionSets.filter(s => deferredSets.has(String(s.key)))
+    ];
+    // Deferred individual players go after all ordinary players, without duplicating a player.
+    const candidates = [];
+    for (const set of orderedSets) for (const id of set.ids) candidates.push({ set, id });
+    candidates.sort((a, b) => Number(deferredPlayers.has(Number(a.id))) - Number(deferredPlayers.has(Number(b.id))));
+    for (const { set, id } of candidates) {
         if (done.has(Number(id))) continue;
         const { rows } = await client.query(`SELECT ${PLAYER_COLS} FROM players WHERE id=$1`, [id]);
         const player = rows[0];
         if (!player || names.has(normName(player.name))) { done.add(Number(id)); continue; }
         state.completedPlayerIds = [...done];
         return player;
-      }
     }
     state.completedPlayerIds = [...done];
     return null;
@@ -128,10 +136,25 @@ export function registerSockets(io, pool) {
 
   async function teamTotals(client, roomId, teamKey) {
     const r = await client.query(
-      'SELECT COUNT(*)::int AS count, COALESCE(SUM(purchase_price_paise),0)::bigint AS spent FROM room_squad_players WHERE room_id=$1 AND team_key=$2',
+      `SELECT COUNT(*)::int AS count,
+              COALESCE(SUM(s.purchase_price_paise),0)::bigint AS spent,
+              COUNT(*) FILTER (WHERE p.nationality IS NOT NULL
+                AND BTRIM(p.nationality) <> ''
+                AND LOWER(p.nationality) NOT LIKE '%india%'
+                AND LOWER(p.nationality) NOT LIKE '%local%')::int AS overseas
+         FROM room_squad_players s
+         JOIN players p ON p.id=s.player_id
+        WHERE s.room_id=$1 AND s.team_key=$2`,
       [roomId, teamKey]);
-    return { count: Number(r.rows[0]?.count || 0), spent: Number(r.rows[0]?.spent || 0) };
+    return {
+      count: Number(r.rows[0]?.count || 0),
+      spent: Number(r.rows[0]?.spent || 0),
+      overseas: Number(r.rows[0]?.overseas || 0)
+    };
   }
+
+  const isOverseas = nationality => Boolean(String(nationality || '').trim())
+    && !/india|local/i.test(String(nationality));
 
   // Close the current lot as sold or unsold. Used by the expiry timer and by the host buttons.
   async function settleCurrent(ctx, kind) {
@@ -146,7 +169,7 @@ export function registerSockets(io, pool) {
     if (sold) {
       // Last line of defence: bidding already enforces this, but a sale must never break the rules either.
       const totals = await teamTotals(client, room.id, bidder.teamKey);
-      reason = bidBlocker({ squadCount: totals.count, spentPaise: totals.spent, nextPaise: Number(state.currentBidPaise) });
+      reason = bidBlocker({ squadCount: totals.count, spentPaise: totals.spent, nextPaise: Number(state.currentBidPaise), overseasCount: totals.overseas, playerOverseas: isOverseas(player.nationality) });
       if (reason) sold = false;
     }
     if (sold) {
@@ -166,6 +189,13 @@ export function registerSockets(io, pool) {
       amountPaise: sold ? Number(state.currentBidPaise) : 0, reason
     };
     state.lastResult = { ...result, at: new Date().toISOString() };
+    const eventMessage = sold
+      ? `${result.playerName} SOLD to ${result.teamName} for ₹${(Number(result.amountPaise || 0) / 1000000000).toFixed(2)} Cr`
+      : `${result.playerName} marked UNSOLD`;
+    await client.query(
+      `INSERT INTO room_chat(room_id,participant_id,display_name,team_key,message) VALUES($1,$2,$3,$4,$5)`,
+      [room.id, 'system', 'AUCTION UPDATE', result.teamKey, eventMessage]
+    );
     state.status = result.status;
     state.deadline = null;
     state.pausedRemainingMs = null;
@@ -281,7 +311,9 @@ export function registerSockets(io, pool) {
         if (['sold', 'unsold'].includes(st.status) && !advanceTimers.has(room.code)) scheduleAdvance(room.code);
         await pool.query('UPDATE room_participants SET connected=true WHERE room_id=$1 AND participant_id=$2', [room.id, participantId]);
         socket.to(room.code).emit('presence:changed', { participantId, connected: true });
-        ack({ ok: true, room: { code: room.code, state: publicState(room, st), config: room.config, status: room.status } });
+        const participants = (await pool.query('SELECT participant_id,display_name,team_key,is_host,connected FROM room_participants WHERE room_id=$1 ORDER BY display_name', [room.id])).rows;
+        io.to(room.code).emit('lobby:participants', participants);
+        ack({ ok: true, room: { code: room.code, state: publicState(room, st), config: room.config, status: room.status }, participants });
       } catch { ack({ ok: false, error: 'join_failed' }); }
     });
 
@@ -298,6 +330,10 @@ export function registerSockets(io, pool) {
           const member = await client.query('SELECT * FROM room_participants WHERE room_id=$1 AND participant_id=$2', [room.id, p.data.participantId]);
           if (!member.rowCount) return { error: 'not_a_room_member' };
           const who = member.rows[0];
+          // Idempotency: if the server accepted a bid but the acknowledgement was lost,
+          // retrying the same request ID returns the original accepted bid instead of creating another.
+          const cached = (state.bidRequestCache || []).find(item => item.requestId === p.data.requestId && item.participantId === p.data.participantId);
+          if (cached) return { duplicateBid: cached.bid };
           if (state.status !== 'active') return { error: 'auction_not_active' };
           if (!state.currentPlayerId) return { error: 'no_current_player' };
           if (!state.deadline || Date.now() >= new Date(state.deadline).getTime()) return { error: 'timer_expired' };
@@ -307,7 +343,7 @@ export function registerSockets(io, pool) {
           // The bidder saw a price on screen; if someone outbid them a moment ago they must confirm the new one.
           if (p.data.expectedBidPaise && p.data.expectedBidPaise !== next) return { error: 'price_changed' };
           const totals = await teamTotals(client, room.id, who.team_key);
-          const blocker = bidBlocker({ squadCount: totals.count, spentPaise: totals.spent, nextPaise: next });
+          const blocker = bidBlocker({ squadCount: totals.count, spentPaise: totals.spent, nextPaise: next, overseasCount: totals.overseas, playerOverseas: isOverseas(state.currentPlayer?.nationality) });
           if (blocker) return { error: blocker, remainingPursePaise: PURSE_PAISE - totals.spent, squadCount: totals.count };
 
           const bid = await client.query(
@@ -318,16 +354,44 @@ export function registerSockets(io, pool) {
           state.deadline = new Date(Date.now() + Number(room.config.durationSeconds || 10) * 1000).toISOString();
           bump(state);
           const saved = { ...bid.rows[0], display_name: who.display_name, player_name: state.currentPlayer?.name };
+          state.bidRequestCache = [...(state.bidRequestCache || []).filter(item => item.requestId !== p.data.requestId), {
+            requestId: p.data.requestId, participantId: p.data.participantId, bid: saved
+          }].slice(-100);
           return { bid: saved, events: [['bid:accepted', { bid: saved, participantName: who.display_name, teamKey: who.team_key }]] };
         });
         if (out.error) {
           const extra = out.state && out.room ? { state: publicState(out.room, out.state) } : {};
           return ack({ ok: false, error: out.error, remainingPursePaise: out.remainingPursePaise, squadCount: out.squadCount, ...extra });
         }
+        if (out.duplicateBid) {
+          const pub = publicState(out.room, out.state);
+          return ack({ ok: true, bid: out.duplicateBid, duplicate: true, state: pub, nextBidPaise: pub.nextBidPaise });
+        }
         finish(out.room, out.state, out);
         const pub = publicState(out.room, out.state);
         ack({ ok: true, bid: out.bid, state: pub, nextBidPaise: pub.nextBidPaise });
       } catch (e) { console.error('bid failed:', e.message); ack({ ok: false, error: 'bid_failed' }); }
+    });
+
+    socket.on('reaction:send', async ({ emoji } = {}, ack = () => {}) => {
+      const allowed = new Set(['👏', '🔥', '😂', '😮', '💸', '🏏']);
+      if (!socket.data?.roomId || !socket.data?.participantId) return ack({ ok: false, error: 'not_in_room' });
+      if (!allowed.has(emoji)) return ack({ ok: false, error: 'invalid_reaction' });
+      try {
+        const member = await pool.query('SELECT display_name,team_key FROM room_participants WHERE room_id=$1 AND participant_id=$2', [socket.data.roomId, socket.data.participantId]);
+        if (!member.rowCount) return ack({ ok: false, error: 'not_a_room_member' });
+        io.to(socket.data.roomCode).emit('reaction:received', {
+          emoji,
+          participantId: socket.data.participantId,
+          displayName: member.rows[0].display_name,
+          teamKey: member.rows[0].team_key,
+          at: new Date().toISOString()
+        });
+        ack({ ok: true });
+      } catch (error) {
+        console.error('reaction failed:', error.message);
+        ack({ ok: false, error: 'reaction_failed' });
+      }
     });
 
     socket.on('chat:send', async (payload = {}, ack = () => {}) => {
@@ -421,6 +485,70 @@ export function registerSockets(io, pool) {
         setCurrent(ctx, r.rows[0], 'ready');
         return {};
       },
+      'defer-player': async ctx => {
+        const { state } = ctx; const id = Number(state.currentPlayerId || 0);
+        if (!id || ['sold','unsold','ended'].includes(state.status)) return { error: 'no_active_player' };
+        state.deferredPlayerIds = addUnique(state.deferredPlayerIds, id);
+        const name = state.currentPlayer?.name || 'Player';
+        const next = await pickNext(ctx);
+        if (!next) endAuction(state); else setCurrent(ctx, next, state.status === 'active' ? 'active' : 'ready');
+        return { liveCurrent: Boolean(next), events: [['auction:player-deferred', { playerId:id, playerName:name }]] };
+      },
+      'defer-set': async ctx => {
+        const { state } = ctx; await loadOrder(ctx);
+        const key = String(ctx.payload.setKey ?? state.currentSetNumber ?? '');
+        if (!state.auctionSets.some(s => String(s.key) === key)) return { error: 'set_not_found' };
+        state.deferredSetKeys = [...new Set([...(state.deferredSetKeys || []).map(String), key])];
+        const current = state.currentPlayerId && String(state.currentSetNumber) === key && !['sold','unsold','ended'].includes(state.status);
+        if (current) { const next = await pickNext(ctx); if (!next) endAuction(state); else setCurrent(ctx,next,state.status === 'active' ? 'active' : 'ready'); }
+        return { liveCurrent: Boolean(current && state.currentPlayerId), events: [['auction:set-deferred',{setKey:key}]] };
+      },
+      'undo-defer-set': async ctx => {
+        const { state } = ctx; const key = String(ctx.payload.setKey ?? '');
+        state.deferredSetKeys = (state.deferredSetKeys || []).filter(k => String(k) !== key);
+        return {};
+      },
+      'reorder-sets': async ctx => {
+        const { state } = ctx; await loadOrder(ctx);
+        const requested = (ctx.payload.setOrder || []).map(String);
+        const known = new Set(state.auctionSets.map(s => String(s.key)));
+        if (requested.some(k => !known.has(k)) || new Set(requested).size !== requested.length) return { error: 'invalid_set_order' };
+        const order = [...requested, ...state.auctionSets.map(s => String(s.key)).filter(k => !requested.includes(k))];
+        const rank = new Map(order.map((k,i) => [k,i]));
+        state.auctionSets.sort((a,b) => rank.get(String(a.key))-rank.get(String(b.key)));
+        state.auctionSetOrder = state.auctionSets.map(s => s.key);
+        return {};
+      },
+      'skip-set': async ctx => {
+        const { state } = ctx; await loadOrder(ctx);
+        const key = String(ctx.payload.setKey ?? state.currentSetNumber ?? '');
+        const set = state.auctionSets.find(s => String(s.key) === key);
+        if (!set) return { error: 'set_not_found' };
+        const done = new Set((state.completedPlayerIds || []).map(Number));
+        for (const id of set.ids) if (!done.has(Number(id))) { done.add(Number(id)); state.unsoldPlayerIds = addUnique(state.unsoldPlayerIds,id); }
+        state.completedPlayerIds = [...done]; state.deferredSetKeys = (state.deferredSetKeys || []).filter(k => String(k) !== key);
+        state.doneNames = [...new Set([...(state.doneNames || []), ...set.ids.map(Number)])];
+        const names = await ctx.client.query('SELECT name FROM players WHERE id = ANY($1::int[])', [set.ids]);
+        state.doneNames = [...new Set([...(state.doneNames || []).filter(v => typeof v === 'string'), ...names.rows.map(r => normName(r.name))])];
+        syncCounts(state);
+        const isCurrent = String(state.currentSetNumber) === key;
+        if (isCurrent) { const next = await pickNext(ctx); if (!next) endAuction(state); else setCurrent(ctx,next,state.status === 'active' ? 'active' : 'ready'); }
+        return { liveCurrent: Boolean(isCurrent && state.currentPlayerId), events: [['auction:set-skipped',{setKey:key, playerCount:set.ids.length}]] };
+      },
+      'unsold-round': async ctx => {
+        const { state } = ctx;
+        if (!['ended','waiting','ready'].includes(state.status)) return { error: 'auction_must_be_idle' };
+        const ids = [...new Set((state.unsoldPlayerIds || []).map(Number))];
+        if (!ids.length) return { error: 'no_unsold_players' };
+        const namesResult = await ctx.client.query('SELECT id,name FROM players WHERE id = ANY($1::int[])', [ids]);
+        const nameKeys = new Set(namesResult.rows.map(r => normName(r.name)));
+        state.completedPlayerIds = (state.completedPlayerIds || []).filter(id => !ids.includes(Number(id)));
+        state.doneNames = (state.doneNames || []).filter(name => !nameKeys.has(name));
+        state.unsoldPlayerIds = []; state.unsoldCount = 0; state.soldCount = (state.soldPlayerIds || []).length;
+        state.deferredPlayerIds = ids; state.status = 'ready'; state.currentPlayerId = null; state.currentPlayer = null;
+        const next = await pickNext(ctx); if (!next) return { error: 'no_players_remaining' };
+        setCurrent(ctx,next,'ready'); return { liveCurrent:true, events:[['auction:unsold-round-started',{playerCount:ids.length}]] };
+      },
       'skip-player': async ctx => {
         const { state } = ctx;
         if (!state.currentPlayerId || ['sold', 'unsold', 'ended'].includes(state.status)) return { error: 'no_active_player' };
@@ -465,8 +593,16 @@ export function registerSockets(io, pool) {
     socket.on('disconnect', async () => {
       if (socket.data?.roomId && socket.data?.participantId) {
         try {
-          await pool.query('UPDATE room_participants SET connected=false WHERE room_id=$1 AND participant_id=$2', [socket.data.roomId, socket.data.participantId]);
-          socket.to(socket.data.roomCode).emit('presence:changed', { participantId: socket.data.participantId, connected: false });
+          // A participant may briefly have an old and a reconnected socket at once.
+          // Do not mark them offline if another live socket already rejoined the room.
+          const activeSockets = await io.in(socket.data.roomCode).fetchSockets();
+          const replacementExists = activeSockets.some(s => s.data?.participantId === socket.data.participantId);
+          if (!replacementExists) {
+            await pool.query('UPDATE room_participants SET connected=false WHERE room_id=$1 AND participant_id=$2', [socket.data.roomId, socket.data.participantId]);
+            socket.to(socket.data.roomCode).emit('presence:changed', { participantId: socket.data.participantId, connected: false });
+            const participants = (await pool.query('SELECT participant_id,display_name,team_key,is_host,connected FROM room_participants WHERE room_id=$1 ORDER BY display_name', [socket.data.roomId])).rows;
+            io.to(socket.data.roomCode).emit('lobby:participants', participants);
+          }
           if (socket.data.voiceJoined) socket.to(socket.data.roomCode).emit('voice:peer-left', { socketId: socket.id });
         } catch { /* ignore */ }
       }

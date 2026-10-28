@@ -145,8 +145,11 @@ export function createApiRouter(pool) {
       if(!room.rowCount){await c.query('ROLLBACK');return res.status(404).json({error:'room_not_found'});}
       const member=await c.query('SELECT 1 FROM room_participants WHERE room_id=$1 AND participant_id=$2 AND team_key=$3',[room.rows[0].id,p.data.participantId,p.data.teamKey]);
       if(!member.rowCount){await c.query('ROLLBACK');return res.status(403).json({error:'not_team_owner'});}
-      const eligible=await c.query('SELECT player_id FROM room_squad_players WHERE room_id=$1 AND team_key=$2 AND player_id=ANY($3::bigint[])',[room.rows[0].id,p.data.teamKey,p.data.playerIds]);
+      const eligible=await c.query(`SELECT s.player_id,p.nationality FROM room_squad_players s JOIN players p ON p.id=s.player_id
+        WHERE s.room_id=$1 AND s.team_key=$2 AND s.player_id=ANY($3::bigint[])`,[room.rows[0].id,p.data.teamKey,p.data.playerIds]);
       if(eligible.rowCount!==p.data.playerIds.length){await c.query('ROLLBACK');return res.status(400).json({error:'players_must_be_in_squad'});}
+      const overseasCount=eligible.rows.filter(x=>String(x.nationality||'').trim() && !/india|local/i.test(String(x.nationality))).length;
+      if(overseasCount>8){await c.query('ROLLBACK');return res.status(400).json({error:'overseas_limit',limit:8,selected:overseasCount});}
       await c.query('DELETE FROM playing_xi WHERE room_id=$1 AND team_key=$2',[room.rows[0].id,p.data.teamKey]);
       for(let i=0;i<p.data.playerIds.length;i++)await c.query('INSERT INTO playing_xi(room_id,team_key,player_id,position) VALUES($1,$2,$3,$4)',[room.rows[0].id,p.data.teamKey,p.data.playerIds[i],i+1]);
       await c.query('COMMIT'); res.json({ok:true,selected:p.data.playerIds.length});

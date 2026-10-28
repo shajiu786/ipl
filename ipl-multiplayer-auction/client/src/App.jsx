@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import axios from "axios";
 import { io } from "socket.io-client";
 import {
-  ArrowRight, Check, Clipboard, Crown, Gavel, Layers, ListOrdered,
+  ArrowRight, Check, Clipboard, Crown, Gavel, Layers, ListOrdered, Star,
   MessageCircle, Mic, MicOff, Pause, Play, Radio, Send, Trophy,
   Users, Wallet, X, Volume2, VolumeX, Settings, ChevronDown, ChevronRight, ChevronUp, Timer, Flag, Ban,
   Copy, Home, Zap
@@ -65,6 +65,7 @@ const MAX_SQUAD = 25;
 const PURSE_PAISE = 120000000000;
 const ERRORS = {
   squad_full: "Squad full: you already own 25 players.",
+  overseas_limit: "Overseas limit reached: a team can buy a maximum of 8 overseas players.",
   insufficient_purse: "Not enough purse left for this bid.",
   already_highest_bidder: "You already hold the highest bid.",
   timer_expired: "Time is up for this player.",
@@ -158,6 +159,16 @@ const clock = iso => iso ? new Date(iso).toLocaleTimeString([], { hour: "2-digit
 const clockShort = iso => iso ? new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
 
 const crShort = paise => `₹${(Number(paise || 0) / 1000000000).toFixed(1)} Cr`;
+const csvCell = value => `"${String(value ?? "").replace(/"/g, '""')}"`;
+function downloadCsv(filename, rows) {
+  if (!rows?.length) return false;
+  const csv = rows.map(row => row.map(csvCell).join(",")).join("\r\n");
+  const blob = new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a"); a.href = url; a.download = filename; a.style.display = "none";
+  document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  return true;
+}
 const ROLE_LABELS = { BAT: "Batter", BOWL: "Bowler", AR: "All-rounder", WK: "Wicketkeeper" };
 const roleLabel = r => ROLE_LABELS[String(r || "").toUpperCase()] || r || "Player";
 const STAT_LABELS = { Eco: "Economy", Avg: "Average", SR: "Strike rate", Wkts: "Wickets" };
@@ -276,6 +287,10 @@ export default function App() {
   const [messages, setMessages] = useState([]);
   const [chatText, setChatText] = useState("");
   const [notice, setNotice] = useState("");
+  const [socketConnected, setSocketConnected] = useState(false);
+  const [qrOpen, setQrOpen] = useState(false);
+  const [reactionBursts, setReactionBursts] = useState([]);
+  const [replayOpen, setReplayOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [remaining, setRemaining] = useState(0);
   const [purses, setPurses] = useState([]);
@@ -283,6 +298,11 @@ export default function App() {
   const [xi, setXi] = useState([]);
   const [playerSearch, setPlayerSearch] = useState("");
   const [setsFilter, setSetsFilter] = useState("all");
+  const [watchlist, setWatchlist] = useState(() => {
+    try { const saved = JSON.parse(localStorage.getItem("auctionroom-watchlist") || "[]"); return Array.isArray(saved) ? saved.map(Number) : []; } catch { return []; }
+  });
+  useEffect(() => { try { localStorage.setItem("auctionroom-watchlist", JSON.stringify(watchlist)); } catch {} }, [watchlist]);
+  const toggleWatchlist = playerId => setWatchlist(old => old.includes(Number(playerId)) ? old.filter(id => id !== Number(playerId)) : [...old, Number(playerId)]);
   const [soundOn, setSoundOn] = useState(() => {
     try { return localStorage.getItem("ar-sound") !== "off"; } catch { return true; }
   });
@@ -432,13 +452,22 @@ export default function App() {
     socketRef.current = socket;
 
     socket.on("connect", () => {
+      setSocketConnected(true);
       socket.emit("room:join-live", {
         code,
         participantId: p.participantId || p.participant_id
       }, response => {
         if (response?.ok) {
-          if (response.room?.state) setAuction(response.room.state);
+          if (response.room?.state) {
+            setAuction(response.room.state);
+            if (["active", "paused", "sold", "unsold", "ended"].includes(response.room.state.status)) setPage("auction");
+          }
           if (response.room?.config) setRoom(old => ({ ...(old || {}), config: response.room.config }));
+          if (Array.isArray(response.participants)) setParticipants(response.participants);
+          // Re-fetch durable data after every successful connect/reconnect so bids, squads,
+          // messages and the saved XI are restored rather than relying only on missed socket events.
+          loadRoomData(code);
+          setNotice("Connected · room state synced");
           // After a reconnect the server forgets who was in voice: rejoin with fresh peer links.
           if (localStreamRef.current) {
             Object.values(peersRef.current).forEach(peer => peer.close());
@@ -450,6 +479,15 @@ export default function App() {
           setNotice(getError({ message: response?.error }, "Room connection failed"));
         }
       });
+    });
+
+    socket.on("disconnect", () => {
+      setSocketConnected(false);
+      setNotice("Connection lost. Reconnecting and syncing room state…");
+    });
+    socket.on("connect_error", () => {
+      setSocketConnected(false);
+      setNotice("Connection issue. Retrying…");
     });
 
     const sendVoiceSignal = (targetSocketId, signal) => {
@@ -578,6 +616,11 @@ export default function App() {
     socket.on("chat:message", message => setMessages(old => [...old, message]));
     socket.on("presence:changed", () => loadRoomData(code));
     socket.on("lobby:participants", list => { if (Array.isArray(list)) setParticipants(list); });
+    socket.on("reaction:received", event => {
+      const item = { ...event, id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}` };
+      setReactionBursts(old => [...old.slice(-7), item]);
+      setTimeout(() => setReactionBursts(old => old.filter(r => r.id !== item.id)), 2600);
+    });
 
     socket.on("sale:celebration", event => {
       const isUnsold = event?.status === "unsold";
@@ -614,8 +657,6 @@ export default function App() {
         created_at: new Date().toISOString()
       }, ...old].slice(0, 100));
     });
-
-    socket.on("connect_error", () => setNotice("Connection issue. Retrying…"));
 
     await Promise.all([loadRoomData(code), loadPlayers(code)]);
   }, [loadPlayers, loadRoomData, playTone]);
@@ -904,6 +945,33 @@ export default function App() {
     }
   };
 
+  const reorderXI = (playerId, direction) => {
+    setXi(old => {
+      const teamRows = old.filter(p => p.team_key === xiTeam);
+      const otherRows = old.filter(p => p.team_key !== xiTeam);
+      const from = teamRows.findIndex(p => Number(p.id) === Number(playerId));
+      const to = from + direction;
+      if (from < 0 || to < 0 || to >= teamRows.length) return old;
+      const [moved] = teamRows.splice(from, 1);
+      teamRows.splice(to, 0, moved);
+      return [...otherRows, ...teamRows.map((p, index) => ({ ...p, position: index + 1 }))];
+    });
+  };
+
+  const copyXI = () => {
+    if (!selectedXI.length) return setNotice("Select players for your Playing XI first.");
+    const text = selectedXI.map((p, index) => `${index + 1}. ${p.name}${isIndian(p.nationality) ? "" : " ✈️"}`).join("\n");
+    copyText(text, "Playing XI copied in batting order.");
+  };
+
+  const sendReaction = emoji => {
+    const socket = socketRef.current;
+    if (!socket?.connected) return setNotice("Reconnect before sending a reaction.");
+    socket.emit("reaction:send", { emoji }, response => {
+      if (!response?.ok) setNotice(friendly(response?.error || "reaction_failed"));
+    });
+  };
+
   const currentSetStatus = useMemo(() => {
     const state = auction;
     const doneIds = new Set([
@@ -938,8 +1006,8 @@ export default function App() {
         unsoldCount: group.players.filter(p => p.unsold).length,
         remainingCount: group.players.length - finished
       };
-    }).filter(group => setsFilter === "all" || group.status === setsFilter);
-  }, [players, auction, setsFilter]);
+    }).filter(group => setsFilter === "all" || (setsFilter === "watchlist" ? group.players.some(p => watchlist.includes(Number(p.id))) : group.status === setsFilter));
+  }, [players, auction, setsFilter, watchlist]);
 
   // ---------- values shared by every screen ----------
   const claimed = Object.keys(teamOwners).length;
@@ -950,7 +1018,7 @@ export default function App() {
     .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
   const feed = [
     ...bids.map((b, i) => ({ kind: "bid", id: `b-${b.id ?? i}`, at: b.created_at, bid: b })),
-    ...messages.filter(m => m.auctionEvent).map(m => ({ kind: "event", id: `e-${m.id}`, at: m.created_at, msg: m }))
+    ...messages.filter(m => m.auctionEvent || m.display_name === "AUCTION UPDATE").map(m => ({ kind: "event", id: `e-${m.id}`, at: m.created_at, msg: m }))
   ].sort((a, b) => new Date(b.at || 0) - new Date(a.at || 0));
   const visibleFeed = feed.slice(0, 30);
   const stats = playerStats(currentPlayer);
@@ -961,9 +1029,12 @@ export default function App() {
   const iLead = Boolean(myTeam) && myTeam === auction.highestBidder?.teamKey;
   const pursePaise = myPurse?.remainingPursePaise ?? PURSE_PAISE;
   const squadCount = Math.max(mySquad.length, Number(myPurse?.players_bought || 0));
-  // Why the BID button is locked for this franchise (the server enforces the same rules).
+  const overseasCount = mySquad.filter(p => !isIndian(p.nationality)).length;
+  const currentPlayerIsOverseas = Boolean(currentPlayer && !isIndian(currentPlayer.nationality));
+  // UI feedback mirrors the server checks; the server remains authoritative.
   const bidBlock = !myTeam ? { key: "spectator", label: "Spectating", message: "Pick a franchise in the lobby to bid." }
     : squadCount >= MAX_SQUAD ? { key: "full", label: "Squad full · 25/25", message: ERRORS.squad_full }
+    : currentPlayerIsOverseas && overseasCount >= 8 ? { key: "overseas", label: "Overseas limit · 8/8", message: ERRORS.overseas_limit }
     : pursePaise < nextBid ? { key: "purse", label: "Insufficient purse", message: ERRORS.insufficient_purse }
     : null;
   const bidDisabled = auction.status !== "active" || !currentPlayer || remaining <= 0 || iLead || Boolean(bidBlock);
@@ -974,6 +1045,33 @@ export default function App() {
   const copyText = (text, done) => {
     navigator.clipboard?.writeText(text)?.catch(() => {});
     setNotice(done);
+  };
+  const exportSquadsCsv = () => {
+    const rows = [["Room", "Mode", "Team", "Player", "Role", "Nationality", "Purchase price (paise)", "Purchase price (Cr)"]];
+    for (const player of squads) rows.push([roomCode, modeOf(room).name, teamInfo(player.team_key)?.name || player.team_key, player.name, roleLabel(player.role), player.nationality || "", Number(player.purchase_price_paise || 0), (Number(player.purchase_price_paise || 0) / 1000000000).toFixed(2)]);
+    setNotice(downloadCsv(`ipl-auction-${roomCode.toLowerCase()}-squads.csv`, rows) ? "Squad CSV exported." : "There are no sold players to export yet.");
+  };
+  const exportResultsCsv = () => {
+    const rows = [["Rank", "Team", "Players", "Overseas players", "Spent (paise)", "Remaining purse (paise)", "Squad shape score"]];
+    const ranked = TEAMS.map(team => {
+      const list = squads.filter(p => p.team_key === team.key);
+      const purse = purses.find(p => p.team_key === team.key);
+      return { team, list, overseas: list.filter(p => !isIndian(p.nationality)).length, spent: Number(purse?.spent_paise || list.reduce((sum, p) => sum + Number(p.purchase_price_paise || 0), 0)), remaining: Number(purse?.remainingPursePaise ?? Math.max(0, PURSE_PAISE - list.reduce((sum, p) => sum + Number(p.purchase_price_paise || 0), 0))), rating: squadRating(list) };
+    }).sort((a, b) => (b.rating ?? -1) - (a.rating ?? -1));
+    ranked.forEach((r, i) => rows.push([i + 1, r.team.name, r.list.length, r.overseas, r.spent, r.remaining, r.rating ?? "N/A"]));
+    setNotice(downloadCsv(`ipl-auction-${roomCode.toLowerCase()}-results.csv`, rows) ? "Results CSV exported." : "Could not export results.");
+  };
+  const exportUnsoldCsv = () => {
+    const ids = new Set((auction.unsoldPlayerIds || []).map(Number));
+    const unsold = players.filter(p => ids.has(Number(p.id)));
+    const rows = [["Player", "Role", "Nationality", "Set", "Base price (paise)"]];
+    unsold.forEach(p => rows.push([p.name, roleLabel(p.role), p.nationality || "", p.source_data?.set_name || p.source_data?.set || "", Number(p.base_price_paise || 0)]));
+    setNotice(downloadCsv(`ipl-auction-${roomCode.toLowerCase()}-unsold.csv`, rows) ? "Unsold player report exported." : "No unsold players are available to export.");
+  };
+  const exportEventHistoryCsv = () => {
+    const rows = [["Timestamp", "Event", "Player", "Team", "Amount (paise)"]];
+    feed.slice().reverse().forEach(item => rows.push([item.at || "", item.kind === "bid" ? "Bid" : item.msg?.message || "Auction event", item.kind === "bid" ? item.bid?.player_name || "" : "", item.kind === "bid" ? (teamInfo(item.bid?.team_key)?.name || item.bid?.team_key || "") : "", item.kind === "bid" ? Number(item.bid?.amount_paise || 0) : ""]));
+    setNotice(downloadCsv(`ipl-auction-${roomCode.toLowerCase()}-event-history.csv`, rows) ? "Event history exported." : "No event history to export yet.");
   };
   const inviteLink = `${window.location.origin}${window.location.pathname}?room=${roomCode}`;
   const openBoard = which => { setTab(which); setSheet(true); };
@@ -1029,7 +1127,7 @@ export default function App() {
         <span>{ended ? "Auction complete" : setInfo ? `Set ${setInfo.position} of ${setInfo.totalSets} · ${setInfo.remaining} of ${setInfo.total} left` : `${auction.soldCount || 0} sold · ${auction.unsoldCount || 0} unsold`}</span>
       </div>
       <div className="cx-filters">
-        {[["all", "All"], ["current", "Current"], ["upcoming", "Upcoming"], ["completed", "Completed"]].map(([key, label]) => (
+        {[["all", "All"], ["current", "Current"], ["upcoming", "Upcoming"], ["completed", "Completed"], ["watchlist", `Watchlist (${watchlist.length})`]].map(([key, label]) => (
           <button key={key} className={setsFilter === key ? "on" : ""} onClick={() => setSetsFilter(key)}>{label}</button>
         ))}
       </div>
@@ -1039,10 +1137,14 @@ export default function App() {
             <div className="cx-set-head">
               <div><b>{group.name}</b><small>{group.players.length} players · {group.soldCount} sold · {group.unsoldCount} unsold · {group.remainingCount} left</small></div>
               <span className={`cx-tag ${group.status === "completed" ? "gray" : group.status === "current" ? "green" : "blue"}`}>{group.status === "completed" ? "Done" : group.status === "current" ? "Live" : "Next"}</span>
+              {isHost && group.status === "upcoming" && <span className="cx-set-reorder">
+                <button type="button" className="cx-watch-btn" aria-label={`Move ${group.name} earlier`} title="Move set earlier" onClick={() => { const order = (auction.setOrder || []).map(String); const i = order.indexOf(String(group.number)); if (i > 0) { [order[i - 1], order[i]] = [order[i], order[i - 1]]; hostAction("reorder-sets", { setOrder: order }); } }}><ChevronUp size={13} /></button>
+                <button type="button" className="cx-watch-btn" aria-label={`Move ${group.name} later`} title="Move set later" onClick={() => { const order = (auction.setOrder || []).map(String); const i = order.indexOf(String(group.number)); if (i >= 0 && i < order.length - 1) { [order[i + 1], order[i]] = [order[i], order[i + 1]]; hostAction("reorder-sets", { setOrder: order }); } }}><ChevronDown size={13} /></button>
+              </span>}
             </div>
             <details open={ended || group.status === "completed"}>
               <summary>View players · {group.players.length}</summary>
-              <div className="cx-set-players">{group.players.map(p => <p key={p.id} className={p.unsold ? "unsold" : p.sold ? "sold" : ""}><span>{p.name}{!isIndian(p.nationality) ? " ✈️" : ""} · {p.role || "—"}</span><small>{p.unsold ? "UNSOLD" : p.sold ? "SOLD" : "UPCOMING"}</small></p>)}</div>
+              <div className="cx-set-players">{group.players.filter(p => setsFilter !== "watchlist" || watchlist.includes(Number(p.id))).map(p => <p key={p.id} className={p.unsold ? "unsold" : p.sold ? "sold" : ""}><span>{p.name}{!isIndian(p.nationality) ? " ✈️" : ""} · {p.role || "—"}</span><small>{p.unsold ? "UNSOLD" : p.sold ? "SOLD" : "UPCOMING"}</small><button type="button" className={`cx-watch-btn ${watchlist.includes(Number(p.id)) ? "on" : ""}`} onClick={() => toggleWatchlist(p.id)} aria-label={`${watchlist.includes(Number(p.id)) ? "Remove" : "Add"} ${p.name} ${watchlist.includes(Number(p.id)) ? "from" : "to"} watchlist`} title={watchlist.includes(Number(p.id)) ? "Remove from watchlist" : "Add to watchlist"}><Star size={13} fill={watchlist.includes(Number(p.id)) ? "currentColor" : "none"} /></button></p>)}</div>
             </details>
           </article>
         ))}
@@ -1061,13 +1163,21 @@ export default function App() {
         {mySquad.map(player => (
           <label key={player.id}>
             <input type="checkbox" checked={selectedXI.some(p => Number(p.id) === Number(player.id))} onChange={() => toggleXI(player.id)} />
-            <span><b>{player.name}</b><small>{roleLabel(player.role)}{!isIndian(player.nationality) ? " · Overseas" : ""}</small></span>
+            <span><b>{player.name}</b><small>{roleLabel(player.role)}{!isIndian(player.nationality) ? " · Overseas ✈️" : ""}</small></span>
             <strong>{money(player.purchase_price_paise)}</strong>
+            {selectedXI.some(p => Number(p.id) === Number(player.id)) && <span className="cx-xi-order">
+              <b>#{selectedXI.findIndex(p => Number(p.id) === Number(player.id)) + 1}</b>
+              <button type="button" className="cx-btn square" disabled={selectedXI.findIndex(p => Number(p.id) === Number(player.id)) === 0} onClick={e => { e.preventDefault(); e.stopPropagation(); reorderXI(player.id, -1); }} aria-label={`Move ${player.name} up`}><ChevronUp size={14} /></button>
+              <button type="button" className="cx-btn square" disabled={selectedXI.findIndex(p => Number(p.id) === Number(player.id)) === selectedXI.length - 1} onClick={e => { e.preventDefault(); e.stopPropagation(); reorderXI(player.id, 1); }} aria-label={`Move ${player.name} down`}><ChevronDown size={14} /></button>
+            </span>}
           </label>
         ))}
       </div>
       {!mySquad.length && <p className="cx-empty">You haven't bought any players yet.</p>}
-      <button className="cx-save" onClick={saveXI}>Save playing XI</button>
+      <div className="cx-xi-actions">
+        <button className="cx-save" onClick={saveXI}>Save playing XI</button>
+        <button className="cx-btn" onClick={copyXI}><Clipboard size={15} /> Copy XI</button>
+      </div>
     </>
   ) : <p className="cx-empty">You didn't pick a franchise in the lobby, so there is no playing XI to set.</p>;
 
@@ -1212,7 +1322,12 @@ export default function App() {
                 <input className="cx-input" readOnly value={inviteLink} aria-label="Invite link" onFocus={e => e.target.select()} />
                 <button className="cx-btn" type="button" onClick={() => copyText(inviteLink, "Invite link copied")} aria-label="Copy invite link"><Copy size={16} /></button>
                 <a className="cx-btn wa" href={`https://wa.me/?text=${encodeURIComponent(`Join my IPL auction: ${inviteLink}`)}`} target="_blank" rel="noreferrer" aria-label="Share on WhatsApp"><MessageCircle size={16} /></a>
+                <button className="cx-btn" type="button" onClick={() => setQrOpen(v => !v)} aria-expanded={qrOpen} aria-label="Show QR invitation">QR</button>
               </div>
+              {qrOpen && <div className="cx-qr-card">
+                <img src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&margin=8&data=${encodeURIComponent(inviteLink)}`} alt="QR code for this auction room invitation" />
+                <div><b>Scan to join</b><small>Opens this room on the same website.</small><button className="cx-btn" type="button" onClick={() => copyText(inviteLink, "Invite link copied")}>Copy invite link</button></div>
+              </div>}
             </div>
           </div>
 
@@ -1269,8 +1384,20 @@ export default function App() {
           <header className="cx-end-top">
             <span className="cx-pill">Room <b style={{ color: "var(--orange)" }}>{roomCode}</b></span>
             <ThemePicker value={theme} onChange={setTheme} compact />
+            <button className="cx-btn" onClick={exportSquadsCsv}><Clipboard size={15} /> Squads CSV</button>
+            <button className="cx-btn" onClick={exportResultsCsv}><Trophy size={15} /> Results CSV</button>
+            <button className="cx-btn" onClick={exportUnsoldCsv}><Layers size={15} /> Unsold CSV</button>
+            <button className="cx-btn" onClick={() => setReplayOpen(true)}><Play size={15} /> Replay</button>
+            <button className="cx-btn" onClick={exportEventHistoryCsv}><Timer size={15} /> Event log</button>
             <button className="cx-btn" onClick={leaveRoom}><Home size={15} /> Menu</button>
           </header>
+          {replayOpen && <div className="cx-modal-backdrop" role="presentation" onClick={() => setReplayOpen(false)}>
+            <section className="cx-replay-modal" role="dialog" aria-modal="true" aria-label="Auction replay" onClick={e => e.stopPropagation()}>
+              <header><div><b>Auction replay</b><small>Recorded bids and sold/unsold events from this room</small></div><button className="cx-btn square" onClick={() => setReplayOpen(false)} aria-label="Close replay"><X size={16} /></button></header>
+              <ol className="cx-replay-list">{feed.slice().reverse().map(item => <li key={item.id}><time>{item.at ? new Date(item.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—"}</time>{item.kind === "bid" ? <span><b>{item.bid?.display_name || teamInfo(item.bid?.team_key)?.name || "Team"}</b> bid {money(item.bid?.amount_paise)} on {item.bid?.player_name || "player"}</span> : <span>{item.msg?.message || "Auction event"}</span>}</li>)}{!feed.length && <li className="cx-empty">No recorded events yet.</li>}</ol>
+              <footer><button className="cx-btn" onClick={exportEventHistoryCsv}><Clipboard size={14} /> Export event log</button></footer>
+            </section>
+          </div>}
           <h1>Auction <em>complete</em></h1>
           <nav className="cx-end-tabs" role="tablist">
             {END_TABS.map(({ id, label, Icon }) => (
@@ -1326,8 +1453,10 @@ export default function App() {
     <main ref={barRef} className="cx-room" data-pane={pane}>
       <header className="cx-top">
         <span className="cx-code">{roomCode}</span>
+        <span className={`cx-connection ${socketConnected ? "online" : "offline"}`} title={socketConnected ? "Connected to auction server" : "Reconnecting to auction server"}><i />{socketConnected ? "Live" : "Reconnecting"}</span>
         <span className={`cx-count ${claimed ? "" : "idle"}`}><i />{claimed}/10</span>
         <button className="cx-btn square hide-sm" onClick={() => copyText(roomCode, "Room code copied")} aria-label="Copy room code" title="Copy room code"><Copy size={15} /></button>
+        <button className="cx-btn hide-sm" onClick={() => setReplayOpen(true)} title="Review auction event timeline"><Timer size={14} /> Replay</button>
         {auction.status === "paused" && <span className="cx-tag amber">Paused</span>}
         <span className="grow" />
         {isHost && (
@@ -1343,6 +1472,24 @@ export default function App() {
         <button className="cx-btn square" onClick={leaveRoom} aria-label="Exit room"><Home size={16} /></button>
       </header>
 
+      <div className="cx-reaction-bar" aria-label="Live reactions">
+        <span>React</span>
+        {["👏", "🔥", "😂", "😮", "💸", "🏏"].map(emoji => <button type="button" key={emoji} onClick={() => sendReaction(emoji)} aria-label={`Send ${emoji} reaction`}>{emoji}</button>)}
+      </div>
+      {reactionBursts.length > 0 && <div className="cx-reaction-bursts" aria-live="polite">{reactionBursts.map(r => <span key={r.id}>{r.emoji} <small>{r.displayName || "Player"}</small></span>)}</div>}
+      {replayOpen && <div className="cx-modal-backdrop" role="presentation" onClick={() => setReplayOpen(false)}>
+        <section className="cx-replay-modal" role="dialog" aria-modal="true" aria-label="Auction replay" onClick={e => e.stopPropagation()}>
+          <header><div><b>Auction replay</b><small>Chronological view of recorded bids and auction events</small></div><button className="cx-btn square" onClick={() => setReplayOpen(false)} aria-label="Close replay"><X size={16} /></button></header>
+          <ol className="cx-replay-list">
+            {feed.slice().reverse().map(item => <li key={item.id}>
+              <time>{item.at ? new Date(item.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—"}</time>
+              {item.kind === "bid" ? <span><b>{item.bid?.display_name || teamInfo(item.bid?.team_key)?.name || "Team"}</b> bid {money(item.bid?.amount_paise)} on {item.bid?.player_name || "player"}</span> : <span>{item.msg?.message || "Auction event"}</span>}
+            </li>)}
+            {!feed.length && <li className="cx-empty">No recorded events yet.</li>}
+          </ol>
+          <footer><button className="cx-btn" onClick={exportEventHistoryCsv}><Clipboard size={14} /> Export event log</button></footer>
+        </section>
+      </div>}
       {settingsOpen && (
         <div className="cx-menu" role="menu">
           <div className="cx-menu-theme"><span>Appearance</span><ThemePicker value={theme} onChange={setTheme} compact /></div>
@@ -1464,6 +1611,11 @@ export default function App() {
                 <button className="cx-btn" disabled={!auction.highestBidder || !currentPlayer || ["sold", "unsold", "ended"].includes(auction.status)} onClick={() => hostAction("sell")}><Check size={14} /> Sold</button>
                 <button className="cx-btn" disabled={!currentPlayer || ["sold", "unsold", "ended"].includes(auction.status)} onClick={() => hostAction("unsold")}>Unsold</button>
                 {["sold", "unsold"].includes(auction.status) && <button className="cx-btn primary" onClick={() => hostAction("next-player")}><ArrowRight size={14} /> Next player</button>}
+                {currentPlayer && !["sold", "unsold", "ended"].includes(auction.status) && <button className="cx-btn" onClick={() => hostAction("defer-player")}><ArrowRight size={14} /> Defer player</button>}
+                {currentPlayer && !["sold", "unsold", "ended"].includes(auction.status) && <button className="cx-btn" onClick={() => hostAction("defer-set", { setKey: String(auction.currentSetNumber ?? auction.setProgress?.key ?? "") })}><Layers size={14} /> Defer set</button>}
+                {currentPlayer && !["sold", "unsold", "ended"].includes(auction.status) && <button className="cx-btn danger" onClick={() => { if (window.confirm("Permanently skip all remaining players in this set? They will be marked unsold.")) hostAction("skip-set", { setKey: String(auction.currentSetNumber ?? auction.setProgress?.key ?? "") }); }}><Ban size={14} /> Skip set</button>}
+                {auction.status === "ended" && Number(auction.unsoldCount || 0) > 0 && <button className="cx-btn primary" onClick={() => hostAction("unsold-round")}><Gavel size={14} /> Start unsold round</button>}
+                {(auction.deferredSetKeys || []).length > 0 && <span className="cx-host-note">Deferred sets: {(auction.deferredSetKeys || []).join(", ")}</span>}
               </div>
             )}
 

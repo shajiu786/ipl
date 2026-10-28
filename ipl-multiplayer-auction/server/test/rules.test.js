@@ -14,6 +14,12 @@ function loadCsv() {
   });
 }
 
+test('bid blocker enforces the eight-player overseas squad limit', () => {
+  assert.equal(bidBlocker({ squadCount: 8, spentPaise: 0, nextPaise: 100, overseasCount: 8, playerOverseas: true }), 'overseas_limit');
+  assert.equal(bidBlocker({ squadCount: 8, spentPaise: 0, nextPaise: 100, overseasCount: 7, playerOverseas: true }), null);
+  assert.equal(bidBlocker({ squadCount: 8, spentPaise: 0, nextPaise: 100, overseasCount: 8, playerOverseas: false }), null);
+});
+
 test('normName ignores case, accents and punctuation', () => {
   assert.equal(normName('  Sanju   SAMSON '), 'sanju samson');
   assert.equal(normName('Quinton de Kock'), normName('quinton  de-kock'));
