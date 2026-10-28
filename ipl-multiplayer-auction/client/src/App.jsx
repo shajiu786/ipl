@@ -139,7 +139,7 @@ function TimerPicker({ value, onChange }) {
 function PlayerPhoto({ player }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [player?.photo_url]);
-  if (player?.photo_url && !failed) return <img src={player.photo_url} alt={player.name} onError={() => setFailed(true)} />;
+  if (player?.photo_url && !failed) return <img referrerPolicy="no-referrer" src={player.photo_url} alt={player.name} onError={() => setFailed(true)} />;
   return <div className="ar-photo-fallback">{player ? player.name.split(" ").map(w => w[0]).slice(0, 2).join("") : <Gavel size={34} />}</div>;
 }
 
