@@ -4,12 +4,9 @@ import { io } from "socket.io-client";
 import {
   ArrowRight, Check, Clipboard, Crown, Gavel, Layers, ListOrdered,
   MessageCircle, Mic, MicOff, Pause, Play, Radio, Send, Trophy,
-  Users, Wallet, X, Volume2, VolumeX, Settings, ChevronDown, ChevronRight, ChevronUp, Timer, Flag, ArrowLeft, Ban
+  Users, Wallet, X, Volume2, VolumeX, Settings, ChevronDown, ChevronRight, ChevronUp, Timer, Flag, Ban,
+  Copy, Home, Zap
 } from "lucide-react";
-import "./styles/app.css";
-import "./styles/theme.css";
-import "./styles/auction.css";
-import "./styles/modes.css";
 
 const API = (import.meta.env.VITE_API_URL || "http://localhost:4000").replace(/\/$/, "");
 const SOCKET_URL = (import.meta.env.VITE_SOCKET_URL || API).replace(/\/$/, "");
@@ -91,6 +88,45 @@ const MODES = {
 };
 const modeOf = r => MODES[r?.config?.mode] || MODES.legends;
 
+const THEMES = [
+  { id: "stadium", name: "Stadium Broadcast", description: "Navy · floodlight · lime", swatches: ["#080b12", "#c7f36b", "#56c8ff"] },
+  { id: "broadcast", name: "Broadcast Pro", description: "Midnight · electric blue", swatches: ["#07111f", "#43a5ff", "#f2f7ff"] },
+  { id: "royal", name: "Royal Gold", description: "Black · gold · champagne", swatches: ["#100d0a", "#e8bd69", "#f7e7c5"] },
+  { id: "black", name: "Midnight Black", description: "Graphite · monochrome", swatches: ["#080808", "#f3f4f6", "#858b98"] },
+  { id: "ipl", name: "IPL Energy", description: "Deep blue · vibrant orange", swatches: ["#081326", "#ff8a36", "#5c8cff"] },
+  { id: "arctic", name: "Arctic Light", description: "Clean white · silver · blue", swatches: ["#f3f6fb", "#2563eb", "#d6deea"] },
+  { id: "emerald", name: "Emerald Elite", description: "Forest · emerald · ivory", swatches: ["#071710", "#34d399", "#f0fdf4"] },
+  { id: "crimson", name: "Crimson Arena", description: "Charcoal · crimson · silver", swatches: ["#130b10", "#ff4d6d", "#d9dce5"] },
+  { id: "purple", name: "Purple Nebula", description: "Black · violet · neon", swatches: ["#100a1c", "#a78bfa", "#ec4899"] },
+  { id: "carbon", name: "Carbon Fiber", description: "Graphite · steel", swatches: ["#111316", "#aab3c2", "#e5e7eb"] },
+  { id: "retro", name: "Retro Cricket", description: "Cream · forest · burgundy", swatches: ["#f4eddf", "#1f5a43", "#7c2638"] },
+  { id: "cyber", name: "Neon Cyber", description: "Black · cyan · magenta", swatches: ["#070b13", "#22d3ee", "#f472b6"] },
+  { id: "blue", name: "Royal Blue", description: "Navy · royal blue · champagne", swatches: ["#07142b", "#4d83ff", "#f0d49b"] },
+  { id: "night", name: "Stadium Night", description: "Pitch green · floodlight white", swatches: ["#07130f", "#7ce0a3", "#f4fff8"] }
+];
+
+function ThemePicker({ value, onChange, compact = false }) {
+  const [open, setOpen] = useState(false);
+  const active = THEMES.find(t => t.id === value) || THEMES[0];
+  return <div className={`cx-theme-picker ${compact ? "compact" : ""}`}>
+    <button className="cx-theme-trigger" type="button" onClick={() => setOpen(v => !v)} aria-expanded={open} aria-label="Choose appearance">
+      <span className="cx-theme-swatches">{active.swatches.map(c => <i key={c} style={{ background: c }} />)}</span>
+      {!compact && <span className="cx-theme-current"><b>{active.name}</b><small>Appearance</small></span>}
+      <ChevronDown size={14} />
+    </button>
+    {open && <div className="cx-theme-popover" role="listbox" aria-label="Available themes">
+      <div className="cx-theme-pop-head"><b>Choose your theme</b><small>Saved on this device</small></div>
+      <div className="cx-theme-grid">
+        {THEMES.map(theme => <button type="button" role="option" aria-selected={value === theme.id} className={`cx-theme-option ${value === theme.id ? "selected" : ""}`} key={theme.id} onClick={() => { onChange(theme.id); setOpen(false); }}>
+          <span className="cx-theme-preview" style={{ background: theme.swatches[0] }}>{theme.swatches.slice(1).map((c, i) => <i key={c} style={{ background: c, left: `${12 + i * 17}px` }} />)}</span>
+          <span className="cx-theme-option-copy"><b>{theme.name}</b><small>{theme.description}</small></span>
+          {value === theme.id && <Check size={15} />}
+        </button>)}
+      </div>
+    </div>}
+  </div>;
+}
+
 const CITY = { csk: "Chennai", mi: "Mumbai", rcb: "Bengaluru", kkr: "Kolkata", rr: "Rajasthan", srh: "Hyderabad", dc: "Delhi", pbks: "Punjab", gt: "Gujarat", lsg: "Lucknow" };
 const FLAGS = { india: "🇮🇳", australia: "🇦🇺", england: "🇬🇧", "south africa": "🇿🇦", "new zealand": "🇳🇿", "west indies": "🏝️", afghanistan: "🇦🇫", "sri lanka": "🇱🇰", bangladesh: "🇧🇩" };
 const isIndian = n => !n || /india|indian|local/i.test(n);
@@ -121,14 +157,82 @@ function playerStats(p) {
 const clock = iso => iso ? new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }) : "";
 const clockShort = iso => iso ? new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
 
+const crShort = paise => `₹${(Number(paise || 0) / 1000000000).toFixed(1)} Cr`;
+const ROLE_LABELS = { BAT: "Batter", BOWL: "Bowler", AR: "All-rounder", WK: "Wicketkeeper" };
+const roleLabel = r => ROLE_LABELS[String(r || "").toUpperCase()] || r || "Player";
+const STAT_LABELS = { Eco: "Economy", Avg: "Average", SR: "Strike rate", Wkts: "Wickets" };
+const statLabel = l => STAT_LABELS[l] || l;
+
+// Squad shape score out of 100 (depth + role balance + overseas count). It is not a player-quality rating.
+function squadRating(list) {
+  if (!list.length) return null;
+  const count = r => list.filter(p => String(p.role || "").toUpperCase() === r).length;
+  const overseas = list.filter(p => !isIndian(p.nationality)).length;
+  const depth = (Math.min(list.length, 18) / 18) * 40;
+  const balance = [count("WK") >= 1, count("BAT") >= 3, count("AR") >= 2, count("BOWL") >= 4].filter(Boolean).length * 10;
+  const overseasScore = overseas <= 8 ? 20 : Math.max(0, 20 - (overseas - 8) * 5);
+  return Math.round(depth + balance + overseasScore);
+}
+
+const SPLASH_TIPS = [
+  "Hosting a room is free. Create a room, pick a franchise and share the code with your friends.",
+  "Your purse is shared across the whole squad. Leave room for the later sets.",
+  "The bid timer resets on every new bid, so a late bid can still win the player.",
+  "Only the host can mark players sold or unsold, and end the auction."
+];
+
+function Splash({ onEnter }) {
+  const [ready, setReady] = useState(false);
+  const [tip] = useState(() => SPLASH_TIPS[Math.floor(Math.random() * SPLASH_TIPS.length)]);
+  useEffect(() => {
+    const timer = setTimeout(() => setReady(true), 1200);
+    return () => clearTimeout(timer);
+  }, []);
+  return (
+    <main className="cx-page cx-splash">
+      <span className="cx-splash-brand"><i><Gavel size={16} /></i>AuctionRoom</span>
+      <div className="cx-splash-foot">
+        <div className="cx-tip"><b>LOADING TIP</b><p>{tip}</p></div>
+        <button className="cx-enter" disabled={!ready} onClick={onEnter}>ENTER AUCTION ROOM <ChevronRight size={15} /></button>
+        <div className="cx-loadline"><i /></div>
+      </div>
+    </main>
+  );
+}
+
+const logoMissing = new Set();
+
+// Uses /public/logos/<key>.png (csk, mi, rcb, kkr, rr, srh, dc, pbks, gt, lsg) when present,
+// otherwise draws a shield crest in the franchise colour.
 function TeamChip({ teamKey, label }) {
   const t = teamInfo(teamKey);
-  return <span className={`ar-chip ${["csk", "gt", "dc"].includes(teamKey) ? "ink" : ""}`} style={{ "--team-color": t?.color || "#2a6bff" }}>{t?.short || label || "•"}</span>;
+  const [, force] = useState(0);
+  if (!t) return <span className="cx-chip plain">{label || "•"}</span>;
+  const useImg = !logoMissing.has(t.key);
+  return (
+    <span className="cx-chip logo" style={{ "--team-color": t.color }} title={t.name}>
+      {useImg ? (
+        <img src={`/logos/${t.key}.png`} alt={t.short} draggable="false" onError={() => { logoMissing.add(t.key); force(n => n + 1); }} />
+      ) : (
+        <svg viewBox="0 0 40 46" role="img" aria-label={t.short}>
+          <defs>
+            <linearGradient id={`g-${t.key}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stopColor={t.color} />
+              <stop offset="1" stopColor={TEAM_ACCENT[t.key] || t.color} />
+            </linearGradient>
+          </defs>
+          <path d="M20 1.5 37 7v15c0 11-7.5 18.5-17 22C10.500 40.500 3 33 3 22V7z" fill={`url(#g-${t.key})`} stroke="rgba(255,255,255,.75)" strokeWidth="1.8" />
+          <path d="M20 5 34 9.500V22c0 9-6 15.500-14 19" fill="none" stroke="rgba(255,255,255,.18)" strokeWidth="1.2" />
+          <text x="20" y="26" textAnchor="middle" fontSize={t.short.length > 3 ? 10 : 12.500} fontWeight="900" fontFamily="Inter, system-ui, sans-serif" fill="#fff" stroke="rgba(0,0,0,.45)" strokeWidth=".6" paintOrder="stroke">{t.short}</text>
+        </svg>
+      )}
+    </span>
+  );
 }
 
 function TimerPicker({ value, onChange }) {
   return (
-    <div className="ar-timer-pick" role="group" aria-label="Bid timer in seconds">
+    <div className="cx-timer-pick" role="group" aria-label="Bid timer in seconds">
       {[5, 6, 7, 8, 9, 10].map(n => (
         <button key={n} type="button" className={value === n ? "active" : ""} aria-pressed={value === n} onClick={() => onChange(n)}>{n}s</button>
       ))}
@@ -139,12 +243,19 @@ function TimerPicker({ value, onChange }) {
 function PlayerPhoto({ player }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [player?.photo_url]);
-  if (player?.photo_url && !failed) return <img src={player.photo_url} alt={player.name} onError={() => setFailed(true)} />;
-  return <div className="ar-photo-fallback">{player ? player.name.split(" ").map(w => w[0]).slice(0, 2).join("") : <Gavel size={34} />}</div>;
+  if (player?.photo_url && !failed) return <img referrerPolicy="no-referrer" src={player.photo_url} alt={player.name} onError={() => setFailed(true)} />;
+  return <div className="cx-photo-fallback">{player ? player.name.split(" ").map(w => w[0]).slice(0, 2).join("") : <Gavel size={34} />}</div>;
 }
 
 export default function App() {
   const [page, setPage] = useState("home");
+  const [theme, setTheme] = useState(() => {
+    try { const saved = localStorage.getItem("auctionroom-theme"); return THEMES.some(t => t.id === saved) ? saved : "stadium"; } catch { return "stadium"; }
+  });
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try { localStorage.setItem("auctionroom-theme", theme); } catch {}
+  }, [theme]);
   const [tab, setTab] = useState("messages");
   const [messageMode, setMessageMode] = useState("bids");
   const [bidConfirmOpen, setBidConfirmOpen] = useState(false);
@@ -185,6 +296,15 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [voicePeers, setVoicePeers] = useState(0);
   const [voiceDebug, setVoiceDebug] = useState([]);
+  const [splash, setSplash] = useState(() => { try { return sessionStorage.getItem("cx-splash") !== "1"; } catch { return true; } });
+  const [homeTab, setHomeTab] = useState("create");
+  const [lobbyTab, setLobbyTab] = useState("players");
+  const [railTab, setRailTab] = useState("activity");
+  const [pane, setPane] = useState("auction");
+  const [sheet, setSheet] = useState(false);
+  const [peopleOpen, setPeopleOpen] = useState(false);
+  const [openTeam, setOpenTeam] = useState(null);
+  const [endTab, setEndTab] = useState("squads");
 
   const socketRef = useRef(null);
   const barRef = useRef(null);
@@ -237,6 +357,13 @@ export default function App() {
     } catch (error) {
       setNotice(`Could not load players: ${getError(error)}`);
     }
+  }, []);
+
+  useEffect(() => {
+    try {
+      const code = new URLSearchParams(window.location.search).get("room");
+      if (code) { setRoomCodeInput(code.toUpperCase().slice(0, 8)); setHomeTab("join"); }
+    } catch {}
   }, []);
 
   useEffect(() => {
@@ -814,108 +941,9 @@ export default function App() {
     }).filter(group => setsFilter === "all" || group.status === setsFilter);
   }, [players, auction, setsFilter]);
 
-  if (page === "home") {
-    return (
-      <main className="home-page">
-        <header className="home-brand">
-          <span className="brand-mark"><Gavel size={24} /></span>
-          <span>AUCTION<span className="gold">ROOM</span></span>
-        </header>
-
-        <section className="home-hero">
-          <p className="eyebrow"><Radio size={15} /> MULTIPLAYER IPL AUCTION</p>
-          <h1>Build your franchise.<br /><span>Win the auction.</span></h1>
-          <p className="muted">Create a private room, select your team and bid live with friends.</p>
-
-          <div className="home-entry">
-            <label htmlFor="display-name">Your name</label>
-            <input id="display-name" value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="Enter your name" maxLength={40} required />
-            <span className="mode-label">Choose a game mode</span>
-            <div className="mode-picker" role="radiogroup" aria-label="Game mode">
-              {Object.values(MODES).map(m => (
-                <button key={m.key} type="button" role="radio" aria-checked={mode === m.key} className={`mode-card ${mode === m.key ? "on" : ""}`} onClick={() => setMode(m.key)}>
-                  <span className="mode-top"><b>{m.name}</b><em className={m.key === "mega2026" ? "new" : ""}>{m.badge}</em></span>
-                  <small>{m.tagline}</small>
-                  <span className="mode-meta">{modeCounts[m.key] ? `${modeCounts[m.key]} players` : "Player pool"} · 120 Cr purse · 25-man squads</span>
-                </button>
-              ))}
-              {mode === "mega2026" && <p className="mode-note">Heads up: the real 2026 IPL auction was a mini auction. This mode uses its player pool, but every franchise starts from scratch like a mega auction.</p>}
-            </div>
-            <div className="home-grid home-grid-simple">
-              <form className="home-card home-card-simple" onSubmit={createRoom}>
-                <button className="primary-button" disabled={busy} type="submit">
-                  <Crown size={17} /> {busy ? "Creating..." : `Create ${MODES[mode].short} Room`}
-                </button>
-              </form>
-              <form className="home-card home-card-simple" onSubmit={joinRoom}>
-                <label htmlFor="room-code">Join room code</label>
-                <input id="room-code" value={roomCodeInput} onChange={e => setRoomCodeInput(e.target.value.toUpperCase())} placeholder="Enter room code" maxLength={8} required />
-                <button className="secondary-button" disabled={busy} type="submit">
-                  <Users size={17} /> {busy ? "Joining..." : "Join Room"} <ArrowRight size={17} />
-                </button>
-              </form>
-            </div>
-          </div>
-        </section>
-        {notice && <Notice message={notice} onClose={clearNotice} />}
-      </main>
-    );
-  }
-
-  if (page === "lobby") {
-    return (
-      <main className="lobby-page">
-        <header className="lobby-header">
-          <div>
-            <p className="eyebrow">{modeOf(room).name.toUpperCase()}</p>
-            <h1>Teams & owners</h1>
-            <p className="muted">Room code: <b>{roomCode}</b> · Share this code with friends.</p>
-          </div>
-          <button className="icon-button" onClick={leaveRoom} aria-label="Leave room"><X /></button>
-        </header>
-
-        <div className="lobby-grid">
-          {TEAMS.map(team => {
-            const owner = teamOwners[team.key];
-            const isMine = myTeam === team.key;
-            return (
-              <button
-                key={team.key}
-                className={`team-card ${owner ? "claimed" : ""} ${isMine ? "selected" : ""}`}
-                style={{ "--team-color": team.color }}
-                onClick={() => chooseTeam(team.key)}
-                disabled={Boolean(owner && !isMine)}
-              >
-                <span className="team-logo">{team.short}</span>
-                <span className="team-copy">
-                  <b>{team.name}</b>
-                  <small>{owner ? `Owned by ${owner}` : "Available — click to select"}</small>
-                </span>
-                {isMine && <Check className="team-check" />}
-              </button>
-            );
-          })}
-        </div>
-
-        <footer className="lobby-footer">
-          <span className="muted">{Object.keys(teamOwners).length}/10 franchises claimed</span>
-          {isHost && (
-            <div className="lobby-timer"><span>Bid timer</span><TimerPicker value={duration} onChange={setTimerSeconds} /></div>
-          )}
-          {isHost ? (
-            <button className="primary-button" onClick={() => hostAction("start")}>
-              <Play size={17} /> Start Auction
-            </button>
-          ) : (
-            <span className="muted">Waiting for the host to start…</span>
-          )}
-        </footer>
-
-        {notice && <Notice message={notice} onClose={clearNotice} />}
-      </main>
-    );
-  }
-
+  // ---------- values shared by every screen ----------
+  const claimed = Object.keys(teamOwners).length;
+  const myName = participant?.displayName || participant?.display_name || displayName || "Participant";
   const chatMessages = messages
     .filter(m => !m.auctionEvent)
     .slice()
@@ -925,7 +953,6 @@ export default function App() {
     ...messages.filter(m => m.auctionEvent).map(m => ({ kind: "event", id: `e-${m.id}`, at: m.created_at, msg: m }))
   ].sort((a, b) => new Date(b.at || 0) - new Date(a.at || 0));
   const visibleFeed = feed.slice(0, 30);
-  const myName = participant?.displayName || participant?.display_name || displayName || "Participant";
   const stats = playerStats(currentPlayer);
   const completedCount = (auction.completedPlayerIds || []).length;
   const settledNow = ["sold", "unsold"].includes(auction.status);
@@ -940,68 +967,389 @@ export default function App() {
     : pursePaise < nextBid ? { key: "purse", label: "Insufficient purse", message: ERRORS.insufficient_purse }
     : null;
   const bidDisabled = auction.status !== "active" || !currentPlayer || remaining <= 0 || iLead || Boolean(bidBlock);
-  const bidLabel = bidBlock ? bidBlock.label : iLead ? `You lead · ${money(auction.currentBidPaise)}` : `BID • ${money(nextBid)}`;
-  const goLower = id => setTab(id);
   const ended = auction.status === "ended";
-  const TABS = ended
-    ? [
-        { id: "squads", label: "Squads & Purse", Icon: Users },
-        { id: "xi", label: "Playing XI", Icon: ListOrdered },
-        { id: "sets", label: "Sets", Icon: Layers },
-        { id: "messages", label: "Chat", Icon: MessageCircle, count: chatMessages.length }
-      ]
-    : [
-        { id: "messages", label: "Live Chat", Icon: MessageCircle, count: chatMessages.length },
-        { id: "squads", label: "My Squad & Purse", Icon: Users },
-        { id: "sets", label: "Sets", Icon: Layers }
-      ];
   const endAuction = () => {
     if (window.confirm("End the auction now? Remaining players stay unsold and everyone will see the final squads.")) hostAction("end");
   };
+  const copyText = (text, done) => {
+    navigator.clipboard?.writeText(text)?.catch(() => {});
+    setNotice(done);
+  };
+  const inviteLink = `${window.location.origin}${window.location.pathname}?room=${roomCode}`;
+  const openBoard = which => { setTab(which); setSheet(true); };
 
-  const squadCards = [...TEAMS].sort((a, b) => (a.key === myTeam ? -1 : b.key === myTeam ? 1 : 0)).map(team => {
-    const list = squads.filter(p => p.team_key === team.key);
-    const purse = purses.find(p => p.team_key === team.key);
+  const chatPanel = (
+    <>
+      <ul className="cx-chat cx-scroll">
+        {chatMessages.slice(0, 60).map((m, i) => (
+          <li key={`msg-${m.id ?? i}`}>
+            {m.team_key ? <TeamChip teamKey={m.team_key} /> : <span className="cx-chip plain">{(m.display_name || "P").charAt(0).toUpperCase()}</span>}
+            <b>{m.display_name || "Participant"}</b>
+            <time>{clockShort(m.created_at)}</time>
+            <span className="t">{m.message}</span>
+          </li>
+        ))}
+        {!chatMessages.length && <li className="empty">No messages yet. Say hello.</li>}
+      </ul>
+      <form className="cx-compose" onSubmit={sendChat}>
+        <button type="button" className={`cx-btn square ${voiceJoined ? "on" : ""}`} onClick={startVoice} aria-label={voiceJoined ? "Leave voice chat" : "Join voice chat"} title={voiceJoined ? `Voice on · ${voicePeers} connected. Tap to leave` : "Join voice chat"}>
+          {voiceJoined ? <Mic size={18} /> : <Radio size={18} />}
+        </button>
+        <input className="cx-input" value={chatText} onChange={e => setChatText(e.target.value)} placeholder="Send a message" maxLength={500} />
+        <button className="cx-btn square send" type="submit" aria-label="Send message"><Send size={18} /></button>
+      </form>
+    </>
+  );
+
+  const squadsView = (
+    <div className="cx-squads">
+      {[...TEAMS].sort((a, b) => (a.key === myTeam ? -1 : b.key === myTeam ? 1 : 0)).map(team => {
+        const list = squads.filter(p => p.team_key === team.key);
+        const purse = purses.find(p => p.team_key === team.key);
+        return (
+          <article className={`cx-squad ${team.key === myTeam ? "mine" : ""}`} key={team.key} style={{ "--team-color": team.color }}>
+            <div className="cx-squad-head">
+              <TeamChip teamKey={team.key} />
+              <div><b>{team.name}</b><small>{team.key === myTeam ? "Your team" : teamOwners[team.key] || "No owner yet"}</small></div>
+              <strong>{money(purse?.remainingPursePaise ?? PURSE_PAISE)}</strong>
+            </div>
+            <div className="cx-squad-meta"><span>Players <b>{list.length}/{MAX_SQUAD}</b></span><span>Spent <b>{money(purse?.spent_paise || 0)}</b></span></div>
+            <ul>{list.map(p => <li key={p.id}><span>{p.name}</span><b>{money(p.purchase_price_paise)}</b></li>)}</ul>
+            {!list.length && <p className="cx-empty">No players bought yet.</p>}
+          </article>
+        );
+      })}
+    </div>
+  );
+
+  const setsView = (
+    <>
+      <div className="cx-setnow">
+        <div><span className="cx-label">Now auctioning</span><strong>{setInfo?.name || auction.currentSetName || currentPlayer?.source_data?.set_name || (auction.currentSetNumber ? `Set ${auction.currentSetNumber}` : "Waiting for first set")}</strong></div>
+        <span>{ended ? "Auction complete" : setInfo ? `Set ${setInfo.position} of ${setInfo.totalSets} · ${setInfo.remaining} of ${setInfo.total} left` : `${auction.soldCount || 0} sold · ${auction.unsoldCount || 0} unsold`}</span>
+      </div>
+      <div className="cx-filters">
+        {[["all", "All"], ["current", "Current"], ["upcoming", "Upcoming"], ["completed", "Completed"]].map(([key, label]) => (
+          <button key={key} className={setsFilter === key ? "on" : ""} onClick={() => setSetsFilter(key)}>{label}</button>
+        ))}
+      </div>
+      <div className="cx-sets">
+        {currentSetStatus.map(group => (
+          <article className="cx-set" key={`${group.number}-${group.name}`}>
+            <div className="cx-set-head">
+              <div><b>{group.name}</b><small>{group.players.length} players · {group.soldCount} sold · {group.unsoldCount} unsold · {group.remainingCount} left</small></div>
+              <span className={`cx-tag ${group.status === "completed" ? "gray" : group.status === "current" ? "green" : "blue"}`}>{group.status === "completed" ? "Done" : group.status === "current" ? "Live" : "Next"}</span>
+            </div>
+            <details open={ended || group.status === "completed"}>
+              <summary>View players · {group.players.length}</summary>
+              <div className="cx-set-players">{group.players.map(p => <p key={p.id} className={p.unsold ? "unsold" : p.sold ? "sold" : ""}><span>{p.name}{!isIndian(p.nationality) ? " ✈️" : ""} · {p.role || "—"}</span><small>{p.unsold ? "UNSOLD" : p.sold ? "SOLD" : "UPCOMING"}</small></p>)}</div>
+            </details>
+          </article>
+        ))}
+        {!currentSetStatus.length && <p className="cx-empty">No sets match this filter.</p>}
+      </div>
+    </>
+  );
+
+  const xiView = myTeam ? (
+    <>
+      <div className="cx-xi-controls">
+        <span><TeamChip teamKey={myTeam} /><b>{teamInfo(myTeam)?.name} · Playing XI</b></span>
+        <span>{selectedXI.length}/11 selected</span>
+      </div>
+      <div className="cx-xi-list">
+        {mySquad.map(player => (
+          <label key={player.id}>
+            <input type="checkbox" checked={selectedXI.some(p => Number(p.id) === Number(player.id))} onChange={() => toggleXI(player.id)} />
+            <span><b>{player.name}</b><small>{roleLabel(player.role)}{!isIndian(player.nationality) ? " · Overseas" : ""}</small></span>
+            <strong>{money(player.purchase_price_paise)}</strong>
+          </label>
+        ))}
+      </div>
+      {!mySquad.length && <p className="cx-empty">You haven't bought any players yet.</p>}
+      <button className="cx-save" onClick={saveXI}>Save playing XI</button>
+    </>
+  ) : <p className="cx-empty">You didn't pick a franchise in the lobby, so there is no playing XI to set.</p>;
+
+  // ---------- splash ----------
+  if (splash) {
+    return <Splash onEnter={() => { try { sessionStorage.setItem("cx-splash", "1"); } catch {} setSplash(false); }} />;
+  }
+
+  // ---------- home ----------
+  if (page === "home") {
+    const creating = homeTab === "create";
     return (
-      <article className={`ar-squad ${team.key === myTeam ? "mine" : ""}`} key={team.key} style={{ "--team-color": team.color }}>
-        <div className="ar-squad-head">
-          <TeamChip teamKey={team.key} />
-          <div><b>{team.name}</b><small>{team.key === myTeam ? "Your team" : teamOwners[team.key] || "No owner yet"}</small></div>
-          <strong>{money(purse?.remainingPursePaise ?? 120000000000)}</strong>
-        </div>
-        <div className="ar-squad-meta"><span>Players <b>{list.length}/25</b></span><span>Spent <b>{money(purse?.spent_paise || 0)}</b></span></div>
-        {list.map(p => <div className="ar-squad-player" key={p.id}><span>{p.name}</span><b>{money(p.purchase_price_paise)}</b></div>)}
-        {!list.length && <p className="ar-empty">No players purchased yet.</p>}
-      </article>
+      <main className="cx-page cx-home">
+        <header className="cx-brandbar"><span className="cx-brand"><i><Gavel size={16} /></i>AuctionRoom</span><ThemePicker value={theme} onChange={setTheme} /></header>
+
+        <section className="cx-hero">
+          <h1><span>Build your</span><em>franchise</em></h1>
+          <p>Host a live IPL auction with friends. Pick a game mode, share the room code and bid against each other in real time.</p>
+          <ol className="cx-steps">
+            <li><b>1</b>Create room</li><li><b>2</b>Invite friends</li><li><b>3</b>Start bidding</li>
+          </ol>
+        </section>
+
+        <section className="cx-shell">
+          <aside className="cx-shell-left">
+            <h2><Trophy size={16} /> Auction rules</h2>
+            <div className="cx-modeinfo">
+              {creating ? (
+                <><b>{MODES[mode].name}</b><p>{MODES[mode].tagline}</p></>
+              ) : (
+                <><b>Joining a room</b><p>Ask the host for the room code. The room's game mode applies to you automatically.</p></>
+              )}
+            </div>
+            <ul className="cx-facts">
+              {creating && <li><span>Player pool</span><b>{modeCounts[mode] ? `${modeCounts[mode]} players` : "—"}</b></li>}
+              <li><span>Franchises</span><b>10</b></li>
+              <li><span>Purse</span><b>₹120 Cr each</b></li>
+              <li><span>Squad size</span><b>Up to {MAX_SQUAD} players</b></li>
+              <li><span>Bid timer</span><b>5 to 10 seconds</b></li>
+            </ul>
+          </aside>
+
+          <form className="cx-shell-right" onSubmit={creating ? createRoom : joinRoom}>
+            <label className="cx-field">
+              <span className="cx-label">Your name</span>
+              <input className="cx-input" id="display-name" value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="Enter your name" maxLength={40} required />
+            </label>
+
+            <div className="cx-tabs" role="tablist">
+              <button type="button" role="tab" aria-selected={creating} className={creating ? "on" : ""} onClick={() => setHomeTab("create")}>Create</button>
+              <button type="button" role="tab" aria-selected={!creating} className={!creating ? "on" : ""} onClick={() => setHomeTab("join")}>Join</button>
+            </div>
+
+            {creating ? (
+              <>
+                <div className="cx-field" role="radiogroup" aria-label="Game mode">
+                  <span className="cx-label">Game mode</span>
+                  <div className="cx-modes">
+                    {Object.values(MODES).map(m => (
+                      <button key={m.key} type="button" role="radio" aria-checked={mode === m.key} className={`cx-mode ${mode === m.key ? "on" : ""}`} onClick={() => setMode(m.key)}>
+                        <b>{m.name}</b>
+                        <small>{modeCounts[m.key] ? `${modeCounts[m.key]} players` : "Player pool"} · 120 Cr purse</small>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {mode === "mega2026" && <p className="cx-note">The real 2026 IPL auction was a mini auction. This mode uses its player pool, but every franchise starts from scratch like a mega auction.</p>}
+                <button className="cx-cta" disabled={busy} type="submit"><Crown size={16} />{busy ? "Creating…" : `Create ${MODES[mode].short} room`}</button>
+              </>
+            ) : (
+              <>
+                <label className="cx-field">
+                  <span className="cx-label">Room code</span>
+                  <input className="cx-input cx-codeinput" id="room-code" value={roomCodeInput} onChange={e => setRoomCodeInput(e.target.value.toUpperCase())} placeholder="ABC123" maxLength={8} required />
+                </label>
+                <button className="cx-cta" disabled={busy} type="submit"><Users size={16} />{busy ? "Joining…" : "Join room"}</button>
+              </>
+            )}
+          </form>
+        </section>
+        {notice && <Notice message={notice} onClose={clearNotice} />}
+      </main>
     );
-  });
+  }
+
+  // ---------- lobby ----------
+  if (page === "lobby") {
+    return (
+      <main className="cx-page cx-lobby">
+        <header className="cx-lobby-top">
+          <button className="cx-btn" onClick={leaveRoom}><Home size={15} /> Exit</button>
+          <div className="cx-roomid"><span className="cx-label">Room code</span><b>{roomCode}</b></div>
+          <ThemePicker value={theme} onChange={setTheme} compact />
+          <span className="cx-grow" />
+          {isHost ? (
+            <button className="cx-btn primary" onClick={() => hostAction("start")}><Play size={14} /> Start auction</button>
+          ) : (
+            <span className="cx-pill">Waiting for the host</span>
+          )}
+        </header>
+
+        <section className="cx-lobby-card">
+          <div className="cx-lobby-left">
+            <div>
+              <h2>Auction rules</h2>
+              <div className="cx-rules">
+                <div className="cx-rule"><span className="cx-label">Game mode</span><b>{modeOf(room).name}</b></div>
+                <div className="cx-rule"><span className="cx-label">Initial budget</span><b style={{ color: "var(--amber)" }}>₹120 Cr</b></div>
+                <div className="cx-rule blue"><span className="cx-label">Squad capacity</span><b>{MAX_SQUAD} players</b></div>
+                <div className="cx-rule violet"><span className="cx-label">Bid timer</span><b>{duration} seconds</b></div>
+              </div>
+              {isHost && (
+                <div className="cx-rule" style={{ marginTop: 10 }}>
+                  <span className="cx-label">Host setting: bid timer</span>
+                  <TimerPicker value={duration} onChange={setTimerSeconds} />
+                </div>
+              )}
+            </div>
+
+            <div>
+              <h2>Claim franchise {myTeam && <span className="cx-locked">SELECTED</span>}</h2>
+              <div className="cx-franchise">
+                {TEAMS.map(team => {
+                  const owner = teamOwners[team.key];
+                  const isMine = myTeam === team.key;
+                  return (
+                    <button key={team.key} type="button" className={`cx-team ${owner ? "taken" : ""} ${isMine ? "mine" : ""}`} style={{ "--team-color": team.color }}
+                      onClick={() => chooseTeam(team.key)} disabled={Boolean(owner && !isMine)} aria-pressed={isMine}
+                      title={owner && !isMine ? `${team.name}: taken by ${owner}` : team.name}>
+                      <TeamChip teamKey={team.key} />
+                      {isMine && <Check size={14} />}
+                      <span>{isMine ? "YOU" : team.short}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div>
+              <h2>Invite players</h2>
+              <div className="cx-invite">
+                <input className="cx-input" readOnly value={inviteLink} aria-label="Invite link" onFocus={e => e.target.select()} />
+                <button className="cx-btn" type="button" onClick={() => copyText(inviteLink, "Invite link copied")} aria-label="Copy invite link"><Copy size={16} /></button>
+                <a className="cx-btn wa" href={`https://wa.me/?text=${encodeURIComponent(`Join my IPL auction: ${inviteLink}`)}`} target="_blank" rel="noreferrer" aria-label="Share on WhatsApp"><MessageCircle size={16} /></a>
+              </div>
+            </div>
+          </div>
+
+          <div className="cx-lobby-right">
+            <div className="cx-seg" role="tablist">
+              <button type="button" role="tab" aria-selected={lobbyTab === "players"} className={lobbyTab === "players" ? "on" : ""} onClick={() => setLobbyTab("players")}><Users size={16} />Players ({participants.length})</button>
+              <button type="button" role="tab" aria-selected={lobbyTab === "chat"} className={lobbyTab === "chat" ? "on" : ""} onClick={() => setLobbyTab("chat")}><MessageCircle size={16} />Chat</button>
+            </div>
+            {lobbyTab === "players" ? (
+              <ul className="cx-roster cx-scroll">
+                {participants.map((p, i) => {
+                  const key = p.team_key || p.teamKey;
+                  const name = p.display_name || p.displayName || "Participant";
+                  const me = (p.participant_id || p.participantId) === participantId;
+                  return (
+                    <li className="cx-person" key={p.participant_id || p.participantId || i} style={{ "--team-color": teamInfo(key)?.color }}>
+                      {key ? <TeamChip teamKey={key} /> : <span className="cx-chip plain">{name.charAt(0).toUpperCase()}</span>}
+                      <div>
+                        <b>{name}{(p.is_host || p.isHost) && <Crown size={13} />}{me && <span className="cx-you">YOU</span>}</b>
+                        <small>{key ? teamInfo(key)?.name : "No franchise yet"}</small>
+                      </div>
+                    </li>
+                  );
+                })}
+                {!participants.length && <li className="cx-empty">Nobody has joined yet.</li>}
+              </ul>
+            ) : (
+              <div className="cx-chatbox">{chatPanel}</div>
+            )}
+          </div>
+        </section>
+        {notice && <Notice message={notice} onClose={clearNotice} />}
+      </main>
+    );
+  }
+
+  // ---------- results ----------
+  if (ended) {
+    const topSales = squads.slice().sort((a, b) => Number(b.purchase_price_paise || 0) - Number(a.purchase_price_paise || 0)).slice(0, 10);
+    const rated = TEAMS.map(t => {
+      const list = squads.filter(p => p.team_key === t.key);
+      return { team: t, list, rating: squadRating(list), overseas: list.filter(p => !isIndian(p.nationality)).length };
+    }).sort((a, b) => (b.rating ?? -1) - (a.rating ?? -1));
+    const END_TABS = [
+      { id: "squads", label: "Team squads", Icon: Users },
+      { id: "expensive", label: "Top expensive", Icon: Trophy },
+      { id: "ratings", label: "Squad ratings", Icon: Zap },
+      { id: "xi", label: "Playing XI", Icon: ListOrdered },
+      { id: "sets", label: "Sets", Icon: Layers }
+    ];
+    return (
+      <main className="cx-page cx-end">
+        <div className="cx-end-wrap">
+          <header className="cx-end-top">
+            <span className="cx-pill">Room <b style={{ color: "var(--orange)" }}>{roomCode}</b></span>
+            <ThemePicker value={theme} onChange={setTheme} compact />
+            <button className="cx-btn" onClick={leaveRoom}><Home size={15} /> Menu</button>
+          </header>
+          <h1>Auction <em>complete</em></h1>
+          <nav className="cx-end-tabs" role="tablist">
+            {END_TABS.map(({ id, label, Icon }) => (
+              <button key={id} role="tab" aria-selected={endTab === id} className={endTab === id ? "on" : ""} onClick={() => setEndTab(id)}><Icon size={15} />{label}</button>
+            ))}
+          </nav>
+
+          {endTab === "squads" && squadsView}
+          {endTab === "expensive" && (
+            <ol className="cx-rank">
+              {topSales.map((p, i) => (
+                <li key={p.id}>
+                  <span className="no">{i + 1}</span>
+                  <TeamChip teamKey={p.team_key} />
+                  <div><b>{p.name}</b><small>{roleLabel(p.role)} · {teamInfo(p.team_key)?.name}</small></div>
+                  <strong>{money(p.purchase_price_paise)}</strong>
+                </li>
+              ))}
+              {!topSales.length && <li className="cx-empty" style={{ display: "block" }}>No players were sold.</li>}
+            </ol>
+          )}
+          {endTab === "ratings" && (
+            <>
+              <p className="cx-formula">Rating out of 100: squad depth (up to 40), role balance (a keeper, 3 batters, 2 all-rounders and 4 bowlers, 10 each) and overseas count (20, minus 5 for each player past 8). It measures squad shape, not player quality.</p>
+              <ol className="cx-rank">
+                {rated.map((r, i) => (
+                  <li key={r.team.key}>
+                    <span className="no">{i + 1}</span>
+                    <TeamChip teamKey={r.team.key} />
+                    <div><b>{r.team.name}</b><small>{r.list.length} players · {r.overseas} overseas</small></div>
+                    <strong>{r.rating ?? "N/A"}</strong>
+                    {r.rating !== null && <span className="cx-bar"><i style={{ width: `${r.rating}%` }} /></span>}
+                  </li>
+                ))}
+              </ol>
+            </>
+          )}
+          {endTab === "xi" && <div style={{ maxWidth: 900, margin: "0 auto" }}>{xiView}</div>}
+          {endTab === "sets" && setsView}
+        </div>
+        {notice && <Notice message={notice} onClose={clearNotice} />}
+      </main>
+    );
+  }
+
+  // ---------- live auction ----------
+  const base = currentPlayer?.base_price_paise ? money(currentPlayer.base_price_paise) : "—";
+  const setLabel = setInfo ? `${setInfo.name || "Set"} · ${setInfo.position}/${setInfo.totalSets}` : (auction.currentSetName || currentPlayer?.source_data?.set_name || "Waiting");
+  const expandedTeam = openTeam === null ? myTeam : openTeam;
+  const nationTag = currentPlayer ? (isIndian(currentPlayer.nationality) ? ["violet", "Indian"] : ["cyan", currentPlayer.nationality || "Overseas"]) : null;
 
   return (
-    <main ref={barRef} className={`ar-app ${auction.status === "ended" ? "is-ended" : ""} ${tab === "sets" && auction.status !== "ended" ? "is-big" : ""}`}>
-      <div className="ar-timebar" aria-hidden="true"><i data-tp /></div>
-      <div className="ar-bar">
-      <header className="ar-top">
-        <span className="ar-logo"><Gavel size={26} /></span>
-        <span className="ar-brand">AUCTION<em>ROOM</em></span>
-        <span className={`ar-status ${auction.status === "active" ? "on" : ""}`} title={String(auction.status || "waiting")}><i /><span className="ar-status-text">{String(auction.status || "waiting").toUpperCase()}</span></span>
-        <span className="ar-spacer" />
+    <main ref={barRef} className="cx-room" data-pane={pane}>
+      <header className="cx-top">
+        <span className="cx-code">{roomCode}</span>
+        <span className={`cx-count ${claimed ? "" : "idle"}`}><i />{claimed}/10</span>
+        <button className="cx-btn square hide-sm" onClick={() => copyText(roomCode, "Room code copied")} aria-label="Copy room code" title="Copy room code"><Copy size={15} /></button>
+        {auction.status === "paused" && <span className="cx-tag amber">Paused</span>}
+        <span className="grow" />
         {isHost && (
-          <button className="ar-btn" onClick={() => hostAction(auction.status === "paused" ? "resume" : "pause")} disabled={!["active", "paused"].includes(auction.status)}>
-            {auction.status === "paused" ? <Play size={17} /> : <Pause size={17} />}<span>{auction.status === "paused" ? "Resume" : "Pause"}</span>
-          </button>
+          <>
+            <button className="cx-btn" onClick={() => hostAction(auction.status === "paused" ? "resume" : "pause")} disabled={!["active", "paused"].includes(auction.status)}>
+              {auction.status === "paused" ? <Play size={14} /> : <Pause size={14} />}<span className="hide-sm">{auction.status === "paused" ? "Resume" : "Pause"}</span>
+            </button>
+            <button className="cx-btn danger" onClick={endAuction}><Flag size={14} /><span className="hide-sm">End</span></button>
+          </>
         )}
-        <button className={`ar-btn square ${settingsOpen ? "open" : ""}`} onClick={() => setSettingsOpen(v => !v)} aria-label="Settings" aria-expanded={settingsOpen}><Settings size={20} /></button>
-        <button className="ar-btn code" onClick={() => { navigator.clipboard?.writeText(roomCode)?.catch(() => {}); setNotice("Room code copied"); }} title="Copy room code">{roomCode}</button>
-        <button className="ar-btn square danger" onClick={leaveRoom} aria-label="Exit room"><X size={22} /></button>
+        <button className="cx-btn" onClick={() => setPeopleOpen(true)}><Users size={14} /><span className="hide-sm">Participants</span></button>
+        <button className="cx-btn square" onClick={() => setSettingsOpen(v => !v)} aria-label="Settings" aria-expanded={settingsOpen}><Settings size={16} /></button>
+        <button className="cx-btn square" onClick={leaveRoom} aria-label="Exit room"><Home size={16} /></button>
       </header>
 
       {settingsOpen && (
-        <div className="ar-settings" role="menu">
-          <button onClick={() => setSoundOn(v => !v)}>{soundOn ? <Volume2 size={17} /> : <VolumeX size={17} />} Auction sounds <b>{soundOn ? "On" : "Off"}</b></button>
-          <button onClick={startVoice}><Radio size={17} /> Voice chat <b>{voiceJoined ? `Leave · ${voicePeers} linked` : "Join"}</b></button>
+        <div className="cx-menu" role="menu">
+          <div className="cx-menu-theme"><span>Appearance</span><ThemePicker value={theme} onChange={setTheme} compact /></div>
+          <button onClick={() => setSoundOn(v => !v)}>{soundOn ? <Volume2 size={16} /> : <VolumeX size={16} />} Auction sounds <b>{soundOn ? "On" : "Off"}</b></button>
+          <button onClick={startVoice}><Radio size={16} /> Voice chat <b>{voiceJoined ? `Leave · ${voicePeers} linked` : "Join"}</b></button>
           {voiceJoined && (
-            <div className="ar-voice-debug">
-              <b>Voice status</b>
+            <div className="cx-voice-debug">
               {!voiceDebug.length && <span>No other player is in voice yet. Everyone must tap Join.</span>}
               {voiceDebug.map(d => (
                 <span key={d.id} className={d.conn === "connected" ? "ok" : d.conn === "failed" || d.ice === "failed" ? "bad" : ""}>
@@ -1017,221 +1365,190 @@ export default function App() {
             const nextMuted = !muted;
             localStreamRef.current?.getAudioTracks().forEach(track => { track.enabled = !nextMuted; });
             setMuted(nextMuted);
-          }}>{muted || !micOn ? <MicOff size={17} /> : <Mic size={17} />} Microphone <b>{muted || !micOn ? "Muted" : "On"}</b></button>
-          {isHost && (
-            <div className="ar-settings-timer"><span>Bid timer (seconds)</span><TimerPicker value={duration} onChange={setTimerSeconds} /></div>
-          )}
+          }}>{muted || !micOn ? <MicOff size={16} /> : <Mic size={16} />} Microphone <b>{muted || !micOn ? "Muted" : "On"}</b></button>
+          {isHost && <div className="cx-timer-row"><span>Bid timer (seconds)</span><TimerPicker value={duration} onChange={setTimerSeconds} /></div>}
         </div>
       )}
 
-      <section className="ar-card ar-identity">
-        <span className="ar-avatar">{myName.trim().charAt(0).toUpperCase()}</span>
-        <div className="ar-identity-copy"><small>YOU ARE PLAYING AS</small><strong>{myName}</strong></div>
-        <span className={`ar-teamtag ${myTeam ? "" : "none"}`} style={{ "--team-color": teamInfo(myTeam)?.color }} title="Teams are picked in the lobby">
-          {myTeam ? <><TeamChip teamKey={myTeam} /><b>{teamInfo(myTeam)?.name}</b></> : <b>Spectating</b>}
-        </span>
-      </section>
+      <div className="cx-body">
+        <aside className="cx-side">
+          <div className="cx-side-head"><span className="cx-label">Auction teams</span></div>
+          <div className="cx-teamlist cx-scroll">
+            {TEAMS.map((team, i) => {
+              const list = squads.filter(p => p.team_key === team.key);
+              const purse = purses.find(p => p.team_key === team.key);
+              const open = expandedTeam === team.key;
+              const rating = squadRating(list);
+              const lead = auction.highestBidder?.teamKey === team.key && auction.status === "active";
+              return (
+                <div className={`cx-trow ${team.key === myTeam ? "mine" : ""}`} key={team.key} style={{ "--team-color": team.color }}>
+                  <button type="button" className={lead ? "lead" : ""} onClick={() => setOpenTeam(open ? "" : team.key)} aria-expanded={open}>
+                    <span className="no">{i + 1}</span>
+                    <TeamChip teamKey={team.key} />
+                    <span className="nm">
+                      <b>{team.name}</b>
+                      <small><i className={teamOwners[team.key] ? "" : "off"} />{team.key === myTeam ? `${myName} (you)` : teamOwners[team.key] || "Open"}</small>
+                    </span>
+                    <span className="pr"><b>{crShort(purse?.remainingPursePaise ?? PURSE_PAISE)}</b><small>{list.length}/{MAX_SQUAD}</small></span>
+                    {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                  </button>
+                  {open && (
+                    <div className="cx-tdetail">
+                      <div className="cx-tstats">
+                        <span>Spent <b>{crShort(purse?.spent_paise || 0)}</b></span>
+                        <span>Rating <b>{rating ?? "N/A"}</b></span>
+                        <span>Overseas <b>{list.filter(p => !isIndian(p.nationality)).length}</b></span>
+                      </div>
+                      {list.length ? (
+                        <ul className="cx-tplayers">{list.map(p => <li key={p.id}><span>{p.name}</span><b>{crShort(p.purchase_price_paise)}</b></li>)}</ul>
+                      ) : <p className="cx-empty">No players yet</p>}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </aside>
 
+        <section className="cx-stage cx-scroll">
+          <div className="cx-strip">
+            <div><span className="cx-tag amber">{setLabel}</span></div>
+            <div>Lot <b className="val">{currentPlayer ? lotNo : "—"}</b></div>
+            <div>Base <b className="val">{base}</b></div>
+            <div>Bidder {auction.highestBidder ? <span className="cx-tag green">{auction.highestBidder.teamName}</span> : <span className="cx-tag gray">No bids yet</span>}</div>
+          </div>
+
+          <div className="cx-stagebody">
+            <article className="cx-lot">
+              <div className="cx-pbar" aria-hidden="true"><i data-tp /></div>
+              <div className="cx-lot-main">
+                <figure className="cx-photo" style={{ margin: 0 }}><PlayerPhoto player={currentPlayer} /></figure>
+                <div className="cx-info">
+                  {currentPlayer && (
+                    <div className="cx-pills">
+                      <span className="cx-tag blue">{roleLabel(currentPlayer.role)}</span>
+                      {nationTag && <span className={`cx-tag ${nationTag[0]}`}>{flagFor(currentPlayer.nationality)} {nationTag[1]}</span>}
+                    </div>
+                  )}
+                  <h2 className="cx-name">{currentPlayer?.name || "Waiting for the host"}</h2>
+                  {currentPlayer && (
+                    <div className="cx-stats">
+                      {stats.map(([label, value]) => <div key={label}><small>{statLabel(label)}</small><b>{value ?? "—"}</b></div>)}
+                    </div>
+                  )}
+                  <div className="cx-bidrow">
+                    <div className="cx-bid">
+                      <span className="cx-label">Current bid</span>
+                      {auction.currentBidPaise ? (
+                        <b>{money(auction.currentBidPaise)}{auction.highestBidder?.teamKey && <TeamChip teamKey={auction.highestBidder.teamKey} />}</b>
+                      ) : (
+                        <b className="dim">Opens at {money(nextBid)}</b>
+                      )}
+                    </div>
+                    <div className="cx-ring" data-tp role="timer" aria-label={`${remaining} seconds left`}><div><b>{remaining}</b><small>SEC</small></div></div>
+                  </div>
+                </div>
+              </div>
+              {bidBlock && bidBlock.key !== "spectator" && <p className="cx-bidnote" role="alert">{bidBlock.message}</p>}
+              <div className="cx-actions">
+                <button className="cx-place" disabled={bidDisabled} onClick={placeBid}>
+                  {bidBlock ? <Ban size={20} /> : <Gavel size={20} />}
+                  {bidBlock ? bidBlock.label : iLead ? `You lead · ${money(auction.currentBidPaise)}` : `Place bid: ${money(nextBid)}`}
+                </button>
+                <button className="cx-listbtn" onClick={() => openBoard("squads")} aria-label="Open squads and sets" title="Squads and sets"><ListOrdered size={22} /></button>
+              </div>
+            </article>
+
+            {isHost && (
+              <div className="cx-host">
+                <button className="cx-btn" disabled={!auction.highestBidder || !currentPlayer || ["sold", "unsold", "ended"].includes(auction.status)} onClick={() => hostAction("sell")}><Check size={14} /> Sold</button>
+                <button className="cx-btn" disabled={!currentPlayer || ["sold", "unsold", "ended"].includes(auction.status)} onClick={() => hostAction("unsold")}>Unsold</button>
+                {["sold", "unsold"].includes(auction.status) && <button className="cx-btn primary" onClick={() => hostAction("next-player")}><ArrowRight size={14} /> Next player</button>}
+              </div>
+            )}
+
+            <div className="cx-mine">
+              <button onClick={() => openBoard("squads")}><Wallet size={15} />Purse <b className={bidBlock?.key === "purse" ? "warn" : ""}>{money(pursePaise)}</b></button>
+              <button onClick={() => openBoard("squads")}><Users size={15} />Squad <b className={squadCount >= MAX_SQUAD ? "warn" : ""}>{squadCount}/{MAX_SQUAD}</b></button>
+              <span>Sold <b>{auction.soldCount || 0}</b> · Unsold <b>{auction.unsoldCount || 0}</b> · Left <b>{Math.max(0, players.length - completedCount)}</b></span>
+            </div>
+          </div>
+        </section>
+
+        <aside className="cx-rail">
+          <div className="cx-railtabs" role="tablist">
+            <button role="tab" aria-selected={railTab === "activity"} className={railTab === "activity" ? "on" : ""} onClick={() => setRailTab("activity")}><Timer size={14} />Live activity</button>
+            <button role="tab" aria-selected={railTab === "chat"} className={railTab === "chat" ? "on" : ""} onClick={() => setRailTab("chat")}><MessageCircle size={14} />Chat {chatMessages.length ? <em>{chatMessages.length}</em> : null}</button>
+          </div>
+          <div className="cx-railbody">
+            {railTab === "activity" ? (
+              <ul className="cx-feed cx-scroll">
+                {visibleFeed.map(item => item.kind === "bid" ? (
+                  <li key={item.id} className={item.bid.team_key && item.bid.team_key === myTeam ? "mine" : ""}>
+                    <p>{item.bid.team_key && item.bid.team_key === myTeam ? "You" : CITY[item.bid.team_key] || item.bid.display_name || "Bidder"} bid <b>{money(item.bid.amount_paise)}</b> for {item.bid.player_name || currentPlayer?.name || "player"}</p>
+                    <time>{clock(item.at)}</time>
+                  </li>
+                ) : (
+                  <li key={item.id} className={item.msg.auctionEvent}>
+                    <p>{item.msg.message}</p>
+                    <time>{clock(item.at)}</time>
+                  </li>
+                ))}
+                {!visibleFeed.length && <li className="empty">Waiting for the first bid.</li>}
+              </ul>
+            ) : chatPanel}
+          </div>
+        </aside>
       </div>
 
-      <section className="ar-card ar-lot">
-        <div className="ar-lot-head">
-          <div className="ar-lot-title">
-            <span>LOT {currentPlayer ? lotNo : "—"}<em className="ar-lot-sub"> • {modeOf(room).name.toUpperCase()}</em></span>
-            <span className="ar-live"><Play size={10} fill="currentColor" /> LIVE</span>
-            {setInfo && <span className="ar-setchip" title={setInfo.name}>SET {setInfo.position}/{setInfo.totalSets}<em> · {setInfo.remaining} left</em></span>}
-          </div>
-          <div className="ar-counts">
-            <span><b className="sold">{auction.soldCount || 0}</b><small>SOLD</small></span>
-            <span><b className="unsold">{auction.unsoldCount || 0}</b><small>UNSOLD</small></span>
-            <span><b>{Math.max(0, players.length - (auction.completedPlayerIds || []).length)}</b><small>LEFT</small></span>
-          </div>
-        </div>
+      <nav className="cx-dock" aria-label="Auction sections">
+        <button className={pane === "auction" ? "on" : ""} onClick={() => setPane("auction")}><Gavel size={19} />Auction</button>
+        <button className={pane === "teams" ? "on" : ""} onClick={() => setPane("teams")}><Users size={19} />Teams</button>
+        <button className={pane === "feed" ? "on" : ""} onClick={() => setPane("feed")}><MessageCircle size={19} />Activity</button>
+      </nav>
 
-        <div className="ar-player">
-          <figure className="ar-photo">
-            <PlayerPhoto player={currentPlayer} />
-            <figcaption>CURRENT PLAYER</figcaption>
-          </figure>
-          <div className="ar-player-info">
-            <span className="ar-role">{currentPlayer?.role || "Waiting"}</span>
-            <h2>{currentPlayer?.name || "Waiting for the host"}</h2>
-            <p className="ar-nation">{currentPlayer ? <><span className="ar-flag">{flagFor(currentPlayer.nationality)}</span>{currentPlayer.nationality || "India"}</> : "Player details will appear here"}</p>
-            <div className="ar-statrow">
-              <div className="ar-base"><small>BASE PRICE</small><b>{currentPlayer?.base_price_paise ? money(currentPlayer.base_price_paise) : "—"}</b></div>
-              {stats.map(([label, value]) => <div className="ar-stat" key={label}><small>{label.toUpperCase()}</small><b>{value ?? "—"}</b></div>)}
+      {sheet && (
+        <div className="cx-scrim" onClick={() => setSheet(false)}>
+          <section className="cx-sheet" role="dialog" aria-modal="true" aria-label="Auction board" onClick={e => e.stopPropagation()}>
+            <header className="cx-sheet-head"><h2>Auction board</h2><button className="cx-btn square" onClick={() => setSheet(false)} aria-label="Close"><X size={16} /></button></header>
+            <div className="cx-tabs" role="tablist">
+              <button role="tab" aria-selected={tab !== "sets"} className={tab !== "sets" ? "on" : ""} onClick={() => setTab("squads")}>Squads &amp; purse</button>
+              <button role="tab" aria-selected={tab === "sets"} className={tab === "sets" ? "on" : ""} onClick={() => setTab("sets")}>Sets</button>
             </div>
-          </div>
+            <div className="cx-sheet-body cx-scroll">{tab === "sets" ? setsView : squadsView}</div>
+          </section>
         </div>
+      )}
 
-        <div className="ar-bidbox">
-          <div className="ar-now">
-            <div><small>CURRENT BID</small><b>{money(auction.currentBidPaise)}</b></div>
-            <div><small>LEADING BIDDER</small><b className={auction.highestBidder ? "" : "dim"}>{auction.highestBidder?.teamName || "No bids yet"}</b></div>
-            <div className={`ar-timer ${remaining <= 5 && auction.status === "active" ? "urgent" : ""}`}>
-              <small>TIME LEFT</small>
-              <b data-tp><Timer size={26} />{String(Math.floor(remaining / 60)).padStart(2, "0")}:{String(remaining % 60).padStart(2, "0")}</b>
+      {peopleOpen && (
+        <div className="cx-scrim" onClick={() => setPeopleOpen(false)}>
+          <section className="cx-sheet narrow" role="dialog" aria-modal="true" aria-label="Participants" onClick={e => e.stopPropagation()}>
+            <header className="cx-sheet-head"><h2>Participants ({participants.length})</h2><button className="cx-btn square" onClick={() => setPeopleOpen(false)} aria-label="Close"><X size={16} /></button></header>
+            <span />
+            <div className="cx-sheet-body cx-scroll">
+              <ul className="cx-pop-rows">
+                {participants.map((p, i) => {
+                  const key = p.team_key || p.teamKey;
+                  const name = p.display_name || p.displayName || "Participant";
+                  return (
+                    <li className="cx-person" key={p.participant_id || p.participantId || i} style={{ "--team-color": teamInfo(key)?.color }}>
+                      {key ? <TeamChip teamKey={key} /> : <span className="cx-chip plain">{name.charAt(0).toUpperCase()}</span>}
+                      <div><b>{name}{(p.is_host || p.isHost) && <Crown size={13} />}</b><small>{key ? teamInfo(key)?.name : "Spectating"}</small></div>
+                    </li>
+                  );
+                })}
+              </ul>
             </div>
-          </div>
-          <div className="ar-next"><span>Next valid bid</span><b>{money(nextBid)}</b></div>
-          {bidBlock && bidBlock.key !== "spectator" && <p className="ar-bid-note" role="alert">{bidBlock.message}</p>}
-          <button className={`ar-bid ${bidBlock ? "blocked" : ""}`} disabled={bidDisabled} onClick={placeBid}>
-            {bidBlock ? <Ban size={22} /> : <Gavel size={24} />}{bidLabel}
-          </button>
+          </section>
         </div>
-
-        {isHost && !ended && (
-          <div className="ar-host">
-            <button disabled={!auction.highestBidder || !currentPlayer || ["sold", "unsold", "ended"].includes(auction.status)} onClick={() => hostAction("sell")}><Check size={15} /> Sold</button>
-            <button disabled={!currentPlayer || ["sold", "unsold", "ended"].includes(auction.status)} onClick={() => hostAction("unsold")}>Unsold</button>
-            {["sold", "unsold"].includes(auction.status) && <button className="next" onClick={() => hostAction("next-player")}><ArrowRight size={15} /> Next</button>}
-            <button className="end" onClick={endAuction}><Flag size={15} /><span className="ar-end-long">End auction</span><span className="ar-end-short">End</span></button>
-          </div>
-        )}
-
-        <div className="ar-links">
-          <button onClick={() => goLower("squads")}><Wallet size={22} /><span>Purse: <b className={bidBlock?.key === "purse" ? "warn" : ""}>{money(pursePaise)}</b></span><ChevronRight size={18} /></button>
-          <button onClick={() => goLower("squads")}><Users size={22} /><span>Squad: <b className={squadCount >= MAX_SQUAD ? "warn" : ""}>{squadCount}/{MAX_SQUAD}</b> · {Math.max(0, MAX_SQUAD - squadCount)} slots</span><ChevronRight size={18} /></button>
-        </div>
-      </section>
-
-      <section className="ar-card ar-feed" aria-label="Live bids">
-        <header>
-          <span className="ar-feed-title"><i />LIVE BIDS</span>
-          <span className="ar-feed-tools">
-            <small>Recent activity</small>
-            <button className={`ar-sound ${soundOn ? "" : "off"}`} onClick={() => setSoundOn(v => !v)} aria-label={soundOn ? "Turn auction sounds off" : "Turn auction sounds on"} title={soundOn ? "Sounds on" : "Sounds off"}>
-              {soundOn ? <Volume2 size={16} /> : <VolumeX size={16} />}
-            </button>
-          </span>
-        </header>
-        <ul>
-          {visibleFeed.map(item => item.kind === "bid" ? (
-            <li key={item.id} className={item.bid.team_key && item.bid.team_key === myTeam ? "mine" : ""}>
-              <TeamChip teamKey={item.bid.team_key} />
-              <span className="ar-feed-text"><span>{item.bid.team_key && item.bid.team_key === myTeam ? "You" : CITY[item.bid.team_key] || item.bid.display_name || "Bidder"} bid <b>{money(item.bid.amount_paise)}</b> for {item.bid.player_name || currentPlayer?.name || "player"}</span></span>
-              <time>{clock(item.at)}</time>
-            </li>
-          ) : (
-            <li key={item.id} className={`event ${item.msg.auctionEvent}`}>
-              <span className="ar-chip event"><Gavel size={13} /></span>
-              <span className="ar-feed-text"><span>{item.msg.message}</span></span>
-              <time>{clock(item.at)}</time>
-            </li>
-          ))}
-          {!visibleFeed.length && <li className="empty">Waiting for the first bid…</li>}
-        </ul>
-      </section>
-
-      <section className="ar-card ar-lower" id="ar-lower">
-        {tab === "sets" && !ended && (
-          <div className="ar-strip">
-            <button className="ar-strip-back" onClick={() => setTab("messages")}><ArrowLeft size={16} /> Auction</button>
-            <span className="ar-strip-name">{currentPlayer?.name || "Waiting…"}</span>
-            <b className="ar-strip-bid-amt">{money(auction.currentBidPaise)}</b>
-            <b data-tp className="ar-strip-time">{String(Math.floor(remaining / 60)).padStart(2, "0")}:{String(remaining % 60).padStart(2, "0")}</b>
-            <button className="ar-strip-bid" disabled={bidDisabled} onClick={placeBid}>{bidBlock ? bidBlock.label : `BID ${money(nextBid)}`}</button>
-          </div>
-        )}
-        {ended && (
-          <div className="ar-endbanner">
-            <Trophy size={20} /><b>Auction complete</b>
-            <span>{auction.soldCount || 0} sold · {auction.unsoldCount || 0} unsold</span>
-          </div>
-        )}
-        <div className="ar-tabs" role="tablist">
-          {TABS.map(({ id, label, Icon, count }) => (
-            <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? "active" : ""} onClick={() => setTab(id)}>
-              <Icon size={20} /><span>{label}</span>{count ? <em>{count}</em> : null}
-            </button>
-          ))}
-        </div>
-
-        {tab === "messages" && (
-          <div className="ar-panel">
-            <ul className="ar-chat">
-              {chatMessages.slice(0, 60).map((m, i) => (
-                <li key={`msg-${m.id ?? i}`}>
-                  {m.team_key ? <TeamChip teamKey={m.team_key} /> : <span className="ar-chip plain">{(m.display_name || "P").charAt(0).toUpperCase()}</span>}
-                  <b>{m.display_name || "Participant"}</b>
-                  <span className="ar-chat-text">{m.message}</span>
-                  <time>{clockShort(m.created_at)}</time>
-                </li>
-              ))}
-              {!chatMessages.length && <li className="empty">No messages yet. Start the conversation.</li>}
-            </ul>
-            <form className="ar-compose" onSubmit={sendChat}>
-              <button type="button" className={`ar-voice ${voiceJoined ? "on" : ""}`} onClick={startVoice} aria-label={voiceJoined ? "Leave voice chat" : "Join voice chat"} title={voiceJoined ? `Voice on · ${voicePeers} connected. Tap to leave` : "Join voice chat"}>
-                {voiceJoined ? <Mic size={22} /> : <Radio size={22} />}
-                {voiceJoined && <i className="ar-voice-count">{voicePeers}</i>}
-              </button>
-              <input value={chatText} onChange={e => setChatText(e.target.value)} placeholder="Send a message…" maxLength={500} />
-              <button className="ar-send" type="submit" aria-label="Send message"><Send size={24} /></button>
-            </form>
-          </div>
-        )}
-
-        {tab === "squads" && <div className="ar-panel ar-squads">{squadCards}</div>}
-
-        {tab === "xi" && auction.status === "ended" && (
-          <div className="ar-panel">
-            {myTeam ? (
-              <>
-                <div className="ar-xi-controls">
-                  <span className="ar-xi-team"><TeamChip teamKey={myTeam} /><b>{teamInfo(myTeam)?.name} · Playing XI</b></span>
-                  <span>{selectedXI.length}/11 selected</span>
-                </div>
-                <div className="ar-xi-list">
-                  {squads.filter(p => p.team_key === myTeam).map(player => (
-                    <label className="ar-xi-player" key={player.id}>
-                      <input type="checkbox" checked={selectedXI.some(p => Number(p.id) === Number(player.id))} onChange={() => toggleXI(player.id)} />
-                      <span><b>{player.name}</b><small>{player.role || "Role unavailable"}{!isIndian(player.nationality) ? " · ✈️ Overseas" : ""}</small></span>
-                      <strong>{money(player.purchase_price_paise)}</strong>
-                    </label>
-                  ))}
-                  {!squads.some(p => p.team_key === myTeam) && <p className="ar-empty">You haven't bought any players yet.</p>}
-                </div>
-                <button className="ar-save" onClick={saveXI}>Save Playing XI</button>
-              </>
-            ) : (
-              <p className="ar-empty">You didn't pick a team in the lobby, so there is no Playing XI to set.</p>
-            )}
-          </div>
-        )}
-
-        {tab === "sets" && (
-          <div className="ar-panel">
-            <div className="ar-setnow">
-              <div><small>NOW AUCTIONING</small><strong>{setInfo?.name || auction.currentSetName || currentPlayer?.source_data?.set_name || (auction.currentSetNumber ? `Set ${auction.currentSetNumber}` : "Waiting for first set")}</strong></div>
-              <span>{auction.status === "ended" ? "Auction complete" : setInfo ? `Set ${setInfo.position} of ${setInfo.totalSets} · ${setInfo.remaining} of ${setInfo.total} left` : `${auction.soldCount || 0} sold · ${auction.unsoldCount || 0} unsold`}</span>
-            </div>
-            <div className="ar-filters">
-              {[["all", "All"], ["current", "Current"], ["upcoming", "Upcoming"], ["completed", "Completed"]].map(([key, label]) => (
-                <button key={key} className={setsFilter === key ? "active" : ""} onClick={() => setSetsFilter(key)}>{label}</button>
-              ))}
-            </div>
-            <div className="ar-sets">
-              {currentSetStatus.map(group => (
-                <article className="ar-set" key={`${group.number}-${group.name}`}>
-                  <div className="ar-set-head"><div><b>{group.name}</b><small>{group.players.length} players · {group.soldCount} sold · {group.unsoldCount} unsold · {group.remainingCount} left</small></div><span className={`ar-set-status ${group.status}`}>{group.status === "completed" ? "Completed" : group.status === "current" ? "Current" : "Upcoming"}</span></div>
-                  <details open={auction.status === "ended" || group.status === "completed"}>
-                    <summary>View players · {group.players.length}</summary>
-                    <div className="ar-set-players">{group.players.map(p => <p key={p.id} className={p.unsold ? "unsold" : p.sold ? "sold" : ""}><span>{p.name}{!isIndian(p.nationality) ? " ✈️" : ""} · {p.role || "—"}</span><small>{p.unsold ? "UNSOLD" : p.sold ? "SOLD" : "UPCOMING"}</small></p>)}</div>
-                  </details>
-                </article>
-              ))}
-              {!currentSetStatus.length && <p className="ar-empty">No sets match this filter.</p>}
-            </div>
-          </div>
-        )}
-      </section>
+      )}
 
       {salePop && <SaleCelebration key={salePop.id} pop={salePop} onDone={clearSale} />}
-
       {notice && <Notice message={notice} onClose={clearNotice} />}
     </main>
   );
 }
+
 
 function Notice({ message, onClose }) {
   // Keep the latest onClose in a ref: an inline arrow from the parent changes every render
@@ -1245,8 +1562,8 @@ function Notice({ message, onClose }) {
   const kind = /fail|reject|cannot|can't|not enough|insufficient|full|expired|already|only the host|not part|unavailable|issue|could not|taken|no bid|wrong/i.test(message) ? "bad"
     : /accepted|placed|selected|copied|started|saved|connected|set to|complete/i.test(message) ? "good" : "info";
   return (
-    <div className={`toast ${kind}`} role="status" aria-live="polite">
-      <i className="toast-dot" />
+    <div className={`cx-toast ${kind}`} role="status" aria-live="polite">
+      <i />
       <span>{message}</span>
       <button onClick={onClose} aria-label="Dismiss"><X size={14} /></button>
     </div>
