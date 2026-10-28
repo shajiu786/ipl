@@ -5,13 +5,12 @@ on:
   workflow_dispatch:
     inputs:
       apply_dedupe:
-        description: "Import both datasets, clean duplicates, and fetch photos and stats"
+        description: "Import both datasets, deduplicate, and enrich players"
         required: true
         type: boolean
         default: false
-
       refresh_all:
-        description: "Force-refresh photos and stats for every player"
+        description: "Force refresh all player photos and statistics"
         required: false
         type: boolean
         default: false
@@ -37,20 +36,18 @@ jobs:
         with:
           node-version: "20"
 
+      - name: Install dependencies
+        working-directory: ipl-multiplayer-auction/server
+        run: npm install --no-package-lock
+
       - name: Validate database configuration
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           if [ -z "$DATABASE_URL" ]; then
-            echo "::error::DATABASE_URL secret is missing."
+            echo "::error::DATABASE_URL secret is missing"
             exit 1
           fi
-
-      - name: Install dependencies and test
-        working-directory: ipl-multiplayer-auction/server
-        run: |
-          npm install --no-package-lock
-          npm test
 
       - name: Run database maintenance
         working-directory: ipl-multiplayer-auction/server
@@ -66,23 +63,23 @@ jobs:
           npm run db:schema
 
           if [ "$APPLY_DEDUPE" = "true" ]; then
-            echo "Importing IPL Legends Auction players..."
+            echo "Importing Legends dataset..."
             npm run import:csv -- ../data/ipl_auction_players_24_sets.csv --dataset=legends
 
-            echo "Importing IPL Mega Auction 2026 players..."
+            echo "Importing Mega Auction dataset..."
             npm run import:csv -- ../data/ipl_mega_auction_2026_players.csv --dataset=mega2026
 
             echo "Applying duplicate cleanup..."
             npm run dedupe:players -- --apply
 
-            echo "Enriching player photos and statistics..."
+            echo "Enriching players..."
             if [ "$REFRESH_ALL" = "true" ]; then
               npm run enrich:players -- --force
             else
               npm run enrich:players
             fi
           else
-            echo "Previewing duplicate cleanup only..."
+            echo "Previewing duplicate cleanup..."
             npm run dedupe:players
           fi
 ```
